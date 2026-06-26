@@ -1,0 +1,21 @@
+## Interface: 20400
+## Title: CrusaderStormLFG|cFF00FF00 v0.1|r
+## Author: Sica
+## Notes: Crusader Storm LFG addon
+## Version: 0.1
+## SavedVariablesPerCharacter: CS_LFGOptions
+
+libs\Libs.xml
+
+translations\enUS.lua
+
+Main.lua
+Types.lua
+MinimapIcon.lua
+LFGPopup.lua
+GroupReadyPopup.lua
+GroupStatusPopup.lua
+RoleCheckPopup.lua
+MessageHandler.lua
+Utils.lua
+Data.lua

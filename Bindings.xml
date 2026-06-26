@@ -1,0 +1,5 @@
+<Bindings>
+  <Binding runOnUp="false" name="CSLFG_TOGGLE" header="CSLFG" default="I" category="BINDING_CATEGORY_CRUSADERSTORM">
+    CSLFG.lfg_popup.toggle()
+  </Binding>
+</Bindings>
