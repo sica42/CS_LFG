@@ -1,8 +1,8 @@
 ## Interface: 20400
-## Title: CrusaderStormLFG|cFF00FF00 v0.2|r
+## Title: CrusaderStormLFG|cFF00FF00 v0.3|r
 ## Author: Sica
 ## Notes: Crusader Storm LFG addon
-## Version: 0.2
+## Version: 0.3
 ## SavedVariablesPerCharacter: CS_LFGOptions
 
 libs\Libs.xml
