@@ -7,7 +7,7 @@ local m = CSLFG
 ---@field show fun()
 ---@field hide fun()
 ---@field toggle fun()
----@field set_lfg fun()
+---@field is_visible fun(): boolean
 ---@field update fun()
 
 ---@class GroupEntryButton : Button
@@ -32,13 +32,15 @@ local m = CSLFG
 
 ---@class PlayerEntryButton: Button
 ---@field player FontString
+---@field player_name string
 ---@field text FontString
 
 ---@class PlayerInfo
----@field [1] string  # Name
----@field [2] number  # Class ID
----@field [3] number  # Level
+---@field [1] string Name
+---@field [2] number Class ID
+---@field [3] number Level
 
+local Types = m.Types
 
 local M = {}
 
@@ -49,9 +51,11 @@ function M.new( options )
 
 	local dungeonType = options.dungeonType
 	local dungeonTypes = { m.T[ "All Available Dungeons" ], m.T[ "Suggested Dungeons" ], m.T[ "Heroic Only" ] }
-	local selectedDungeons = {}
-	local currentTab = "LFG"
-	local currentView = 1
+	local selectedDungeons = m.selectedDungeons
+	local selectDungeonLimit = 5
+	local currentTab = Types.Tab.LFG
+	local browseTypes = { m.T[ "Show all" ], m.T[ "Dungeons only" ], m.T[ "Groups only" ] }
+	local currentBrowseView = 1
 
 	---@type table<number, DungeonInfo>
 	local dungeonsData
@@ -72,8 +76,6 @@ function M.new( options )
 	local playersDisplayed = 8
 	local selectedPlayer
 
-	--local hide
-
 	local function sort_by_level( a, b )
 		if a.minLevel == b.minLevel then
 			if a.maxLevel == b.maxLevel then
@@ -88,7 +90,6 @@ function M.new( options )
 	local function sort_dungeons( level )
 		local sorted = {}
 		for k, v in pairs( m.dungeons ) do
-			--if getn(sorted) >= 14 then break end
 			if level >= v.minLevel then
 				v.code = k
 				if dungeonType ~= 3 then
@@ -96,7 +97,7 @@ function M.new( options )
 						tinsert( sorted, v )
 					end
 				end
-				if v.heroic then
+				if v.heroic and level >= 70 then
 					tinsert( sorted, {
 						[ "name" ] = "(" .. m.T[ "HC" ] .. ") " .. v.name,
 						[ "code" ] = k .. "hc",
@@ -114,8 +115,7 @@ function M.new( options )
 
 	local function get_dungeons()
 		local level = UnitLevel( "player" )
-		local gcount = m.isModern and GetNumGroupMembers() or GetNumPartyMembers()
-		if gcount then
+		if m.isGrouped then
 			for i = 1, 4 do
 				local unit = "party" .. i
 				if UnitIsConnected( unit ) then
@@ -134,7 +134,7 @@ function M.new( options )
 		end
 
 		local level = UnitLevel( "player" )
-		local gcount = m.isModern and GetNumGroupMembers() or GetNumPartyMembers()
+		local gcount = m.get_num_group_members()
 		if gcount then
 			for i = 1, 4 do
 				local unit = "party" .. i
@@ -144,7 +144,7 @@ function M.new( options )
 			end
 		end
 
-		local offset = popup.lfg_scrollbar:GetValue()
+		local offset = popup.lfg_dungeons_scrollbar:GetValue()
 
 		for i = 1, dungeonsDisplayed do
 			---@class DungeonEntryFrame
@@ -152,13 +152,13 @@ function M.new( options )
 			local dungeonIndex = i + offset
 			local dungeon = dungeonsData[ dungeonIndex ]
 			if dungeon and dungeon.code then
-				if dungeonIndex <= getn( dungeonsData ) then
+				if dungeonIndex <= #dungeonsData then
 					entry.name:SetText( dungeon.name )
 					entry.levels:SetText( "(" .. dungeon.minLevel .. " - " .. dungeon.maxLevel .. ")" )
 
 					local isSelected = selectedDungeons[ dungeon.code ]
 					entry.checkButton:SetChecked( isSelected )
-					if m.isQueued then
+					if m.isQueued or (not entry.checkButton:GetChecked() and m.count( selectedDungeons ) == selectDungeonLimit) then
 						entry.checkButton:Disable()
 						entry:SetAlpha( 0.5 )
 					else
@@ -180,8 +180,8 @@ function M.new( options )
 			end
 		end
 
-		popup.lfg_scrollbar.set_max_value( getn( dungeonsData ) - dungeonsDisplayed )
-		popup.lfg_scrollbar.set_value( offset )
+		popup.lfg_dungeons_scrollbar.set_max_value( #dungeonsData - dungeonsDisplayed )
+		popup.lfg_dungeons_scrollbar.set_value( offset )
 	end
 
 	local function sort_groups( level )
@@ -206,187 +206,161 @@ function M.new( options )
 		return sorted
 	end
 
-	local function get_groups()
-		m.debug( "get_groups" )
-
-		---@type table<number, GroupInfo>
-		groupsData = {
-			{
-				type = m.Types.GroupTypes.LFG,
-				code = "dm",
-				description = "",
-				players = {
-					[ m.Types.Roles.DPS ] = { { "Sica", 2, 70 }, { "Marina", 3, 66 } },
-					[ m.Types.Roles.Healer ] = { { "Borazor", 7, 70 } },
-					[ m.Types.Roles.Tank ] = { { "Lynn", 4, 70 } }
-				}
-			},
-			{
-				type = m.Types.GroupTypes.LFG,
-				code = "zf",
-				description = "",
-				players = {
-					[ m.Types.Roles.DPS ] = { { "Sica", 2, 70 }, { "Marina", 3, 66 } },
-					[ m.Types.Roles.Healer ] = { { "Borazor", 7, 70 }, { "Kyrisha", 5, 70 } },
-				}
-			},
-			{
-				type = m.Types.GroupTypes.LFM,
-				code = "dm",
-				description = "This is a test descriptions. Lets see how much text I can put here before things get up. bla bla bla to much text we don't want!",
-				leader = { "Sica", 2, 70 },
-				players = {
-					[ m.Types.Roles.DPS ] = { { "Sica", 2, 70 }, { "Marina", 3, 66 } },
-					[ m.Types.Roles.Healer ] = { { "Borazor", 7, 70 } },
-				}
-			},
-			{
-				type = m.Types.GroupTypes.LFM,
-				code = "bm",
-				leader = { "Sica", 2, 70 },
-				heroic = true,
-				players = {
-					[ m.Types.Roles.DPS ] = { { "Sica", 2, 70 }, { "Marina", 3, 66 }, { "Muttekalf", 7, 70 } },
-					[ m.Types.Roles.Healer ] = { { "Borazor", 7, 70 } },
-				}
-			},
-			{
-				type = m.Types.GroupTypes.LFM,
-				code = "mara",
-				leader = { "Lynn", 4, 70 },
-				players = {
-					[ m.Types.Roles.Tank ] = { { "Lynn", 4, 70 } },
-					[ m.Types.Roles.DPS ] = { { "Sica", 2, 70 } }
-				}
-			},
-			{
-				type = m.Types.GroupTypes.LFM,
-				code = "bfd",
-				leader = { "Lynn", 4, 70 },
-				players = {
-					[ m.Types.Roles.Tank ] = { { "Lynn", 4, 70 } },
-					[ m.Types.Roles.DPS ] = { { "Sica", 2, 70 } }
-				}
-			},
-			{
-				type = m.Types.GroupTypes.LFM,
-				code = "rfd",
-				leader = { "Lynn", 4, 70 },
-				players = {
-					[ m.Types.Roles.Tank ] = { { "Lynn", 4, 70 } },
-					[ m.Types.Roles.DPS ] = { { "Sica", 2, 70 } }
-				}
-			}
-		}
-
-		groupsData = sort_groups( m.player_level )
-	end
-
-	local function build_groups_data()
+	---@param groupType GroupType
+	local function build_groups_data( groupType )
 		groupsData = {}
-		for _, player in pairs( m.lfg_list ) do
-			if player.lfg then
-				if next( player.dungeons ) and next( player.roles ) then
-					for _, player_dungeon in pairs( player.dungeons ) do
-						local code = player_dungeon
-						local heroic = false
-						if strfind( code, "hc$" ) then
-							code = string.sub( code, 1, -3 )
-							heroic = true
+
+		for _, entry in pairs( m.lfg_list ) do
+			if entry.lfg and groupType == m.Types.GroupTypes.LFG then
+				if next( entry.dungeons ) and next( entry.roles ) then
+					for _, dungeon_code in pairs( entry.dungeons ) do
+						local code, heroic = m.dungeon_code_hc( dungeon_code )
+						local dIndex, groupData
+
+						for i, d in pairs( groupsData ) do
+							if d.code == code and d.heroic == heroic then
+								dIndex = i
+								groupData = d
+							end
 						end
+						--local dIndex, dungeon = m.find( code, groupsData, "code" )
+						--if dungeon and dungeon.heroic ~= heroic then dungeon = nil end
 
-						local dungeon, dIndex = m.find( code, groupsData, "code" )
-						if dungeon and dungeon.heroic ~= heroic then dungeon = nil end
 
-						if not dungeon then
+						if not groupData then
 							groupsData[ #groupsData + 1 ] = {
-								type = m.Types.GroupTypes.LFG,
+								type = Types.GroupTypes.LFG,
 								code = code,
 								heroic = heroic,
 								players = {}
 							}
-							dungeon = groupsData[ #groupsData ]
+							groupData = groupsData[ #groupsData ]
 							dIndex = #groupsData
 						end
 
-						for _, role in pairs( player.roles ) do
-							if not dungeon.players[ role ] then dungeon.players[ role ] = {} end
-							table.insert( groupsData[ dIndex ].players[ role ], player.player )
+						for _, role in pairs( entry.roles ) do
+							if not groupData.players[ role ] then groupData.players[ role ] = {} end
+							table.insert( groupData.players[ role ], CopyTable( entry.player ) )
+							--table.insert( groupsData[ dIndex ].players[ role ], CopyTable( entry.player ) )
 						end
 					end
 				end
-			elseif player.lfm then
+			elseif entry.lfm and groupType == m.Types.GroupTypes.LFM then
+				if next( entry.dungeons ) and next( entry.roles ) and next( entry.members ) then
+					--					local code = entry.dungeons[ 1 ]
+					--local heroic = false
+					--if strfind( code, "hc$" ) then
+					--						code = string.sub( code, 1, -3 )
+					--heroic = true
+					--end
+
+					local code, heroic = m.dungeon_code_hc( entry.dungeons[ 1 ] )
+					local groupData = {
+						type = Types.GroupTypes.LFM,
+						code = code,
+						heroic = heroic,
+						description = entry.message,
+						leader = CopyTable( entry.player ),
+						players = {}
+					}
+
+					for _, role in pairs( entry.roles ) do
+						if not groupData.players[ role ] then groupData.players[ role ] = {} end
+						table.insert( groupData.players[ role ], CopyTable( entry.player ) )
+					end
+
+					for _, member in pairs( entry.members ) do
+						for _, role in pairs( member.roles ) do
+							if not groupData.players[ role ] then groupData.players[ role ] = {} end
+							table.insert( groupData.players[ role ], CopyTable( member.player ) )
+						end
+					end
+
+					groupsData[ #groupsData + 1 ] = groupData
+				end
 			end
 		end
-
-		m.groupsData = groupsData
 
 		groupsData = sort_groups( m.player_level )
 	end
 
 	local function update_groups()
-		m.debug("update_groups")
+		m.debug( "update_groups" )
 		for _, frame in pairs( groupEntryFrames ) do
 			frame:Hide()
 		end
 
 		local offset = popup.search_scrollbar:GetValue()
 
-		for i = 1, groupsDisplayed do
-			local entry = groupEntryFrames[ i ]
-			local index = i + offset
-
-			local data = groupsData[ index ]
-			if data and index <= getn( groupsData ) then
-				local dungeon = m.dungeons[ data.code ]
-				local r, g, b = m.get_dungeon_color( dungeon, m.player_level, data.heroic )
-				local title = data.heroic and (dungeon.name .. " (Heroic)") or dungeon.name
-
-				entry.title:SetText( title )
-				entry.title:SetWidth( 200 )
-				entry.title:SetTextColor( r, g, b )
-				entry.title:SetWidth( entry.title:GetStringWidth() + 5 )
-				entry.bg:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\background\]] .. (dungeon.background or "") )
-
-				if data.type == m.Types.GroupTypes.LFG then
-					entry.leader:SetText( "" )
-					entry.description:SetText( "" )
-
-					for role in pairs( m.Types.Roles ) do
-						local count = data.players[ role ] and getn( data.players[ role ] ) or 0
-						entry[ role .. "_frame" ].number:SetText( tostring( count ) )
-					end
-				elseif data.type == m.Types.GroupTypes.LFM then
-					entry.leader:SetText( m.T[ "Lead by " ] .. m.player_to_colorized_string( data.leader ) )
-					entry.description:SetText( data.description or "" )
-
-					for role in pairs( m.Types.Roles ) do
-						local count = data.players[ role ] and getn( data.players[ role ] ) or 0
-						local max = role == m.Types.Roles.DPS and 3 or 1
-						entry[ role .. "_frame" ].number:SetText( tostring( count ) .. "/" .. tostring( max ) )
-					end
-				end
-				entry.data = data
-				entry.dataIndex = index
-				entry:Show()
+		if #groupsData == 0 then
+			if #m.lfg_list == 0 then
+				popup.empty:SetText( m.T[ 'No players are currently Looking for Group' ] )
 			else
-				entry:Hide()
+				if currentBrowseView == 2 then
+					popup.empty:SetText( string.format( m.T[ "No players looking for dungeon runs found\nSelect Show all to show %d entries" ], #m.lfg_list ) )
+				else
+					popup.empty:SetText( string.format( m.T[ "No groups looking for members found\nSelect Show all to show %d entries" ], #m.lfg_list ) )
+				end
+			end
+			popup.empty:Show()
+		else
+			for i = 1, groupsDisplayed do
+				local entry = groupEntryFrames[ i ]
+				local index = i + offset
+
+				local data = groupsData[ index ]
+				if data and index <= #groupsData then
+					local dungeon = m.dungeons[ data.code ]
+					local r, g, b = m.get_dungeon_color( dungeon, m.player_level, data.heroic )
+					local title = data.heroic and (dungeon.name .. " (Heroic)") or dungeon.name
+
+					entry.title:SetText( title )
+					entry.title:SetWidth( 200 )
+					entry.title:SetTextColor( r, g, b )
+					entry.title:SetWidth( entry.title:GetStringWidth() + 5 )
+					entry.bg:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\background\]] .. (dungeon.background or "") )
+
+					if data.type == Types.GroupTypes.LFG then
+						entry.leader:SetText( "" )
+						entry.description:SetText( "" )
+
+						for role in pairs( Types.Roles ) do
+							local count = data.players[ role ] and #data.players[ role ] or 0
+							entry[ role .. "_frame" ].number:SetText( tostring( count ) )
+						end
+					elseif data.type == Types.GroupTypes.LFM then
+						entry.leader:SetText( m.T[ "Lead by " ] .. m.player_to_colorized_string( data.leader ) )
+						entry.description:SetText( data.description or "" )
+
+						for role in pairs( Types.Roles ) do
+							local count = data.players[ role ] and #data.players[ role ] or 0
+							local max = role == "DPS" and 3 or 1
+							entry[ role .. "_frame" ].number:SetText( tostring( count ) .. "/" .. tostring( max ) )
+						end
+					end
+					entry.data = data
+					entry.dataIndex = index
+					entry:Show()
+				else
+					entry:Hide()
+				end
 			end
 		end
 
-		popup.search_scrollbar.set_max_value( getn( groupsData ) - groupsDisplayed )
+		popup.search_scrollbar.set_max_value( #groupsData - groupsDisplayed )
 		popup.search_scrollbar.set_value( offset )
 	end
 
 	local function update_players()
-		m.debug("update_groups")
+		m.debug( "update_players" )
 		for _, frame in pairs( playerEntryFrames ) do
 			frame:Hide()
 		end
 
 		local offset = popup.search_scrollbar:GetValue()
 
-		if getn( m.lfg_list ) == 0 then
+		if #m.lfg_list == 0 then
+			popup.empty:SetText( m.T[ 'No players are currently Looking for Group' ] )
 			popup.empty:Show()
 		else
 			popup.empty:Hide()
@@ -397,14 +371,15 @@ function M.new( options )
 
 				local data = m.lfg_list[ index ]
 
-				if data and index <= getn( m.lfg_list ) then
+				if data and index <= #m.lfg_list then
 					entry.player:SetText( string.format( "%s (%d %s)",
 						m.player_to_colorized_string( data.player ),
 						data.player[ 3 ],
-						m.capitalize( m.Types.PlayerClass[ data.player[ 2 ] ] ) )
+						m.capitalize( Types.PlayerClass[ data.player[ 2 ] ] ) )
 					)
 
 					entry.text:SetText( data.message )
+					entry.player_name = data.player[ 1 ]
 					entry:Show()
 				else
 					entry:Hide()
@@ -412,12 +387,12 @@ function M.new( options )
 			end
 		end
 
-		popup.search_scrollbar.set_max_value( getn( m.lfg_list ) - playersDisplayed )
+		popup.search_scrollbar.set_max_value( #m.lfg_list - playersDisplayed )
 		popup.search_scrollbar.set_value( offset )
 	end
 
-	local function update_list()
-		if currentView == 1 then
+	local function update_browse_list()
+		if currentBrowseView == 1 then
 			if groupEntryFrames[ 1 ]:IsVisible() then
 				for _, frame in pairs( groupEntryFrames ) do
 					frame:Hide()
@@ -430,22 +405,67 @@ function M.new( options )
 					frame:Hide()
 				end
 			end
-			--if getn(groupsData) == 0 then
-			build_groups_data()
-			--end
+
+			build_groups_data( currentBrowseView == 2 and Types.GroupTypes.LFG or Types.GroupTypes.LFM )
 			update_groups()
 		end
 	end
 
-	local function update_status()
-		m.debug( "update_status" )
-		if currentTab == "Browse" then
-			if selectedGroup and groupsData[ selectedGroup ].type == m.Types.GroupTypes.LFM then
-				for role in pairs( m.Types.Roles ) do
-					local max = role == m.Types.Roles.DPS and 3 or 1
-					local count = groupsData[ selectedGroup ].players[ role ] and getn( groupsData[ selectedGroup ].players[ role ] ) or 0
+	local function update_message()
+		if dungeonsDisplayed == 9 then
+			local msg = m.generate_message( selectedDungeons )
+			local old_msg = popup.editbox_message.get_text()
+			local diff
 
-					if m.find( m.Types.Roles[ role ], m.classRoles[ m.player_class ] ) and count < max then
+			if old_msg == popup.editbox_message.orig_msg then
+				diff = " - "
+			else
+				diff = string.gsub( old_msg, popup.editbox_message.orig_msg, "" )
+			end
+
+			popup.editbox_message.orig_msg = msg
+			popup.editbox_message.set_text( msg .. diff )
+		end
+	end
+
+	local function confirm_roles()
+		local got_addon = 0
+		for _, member in pairs( m.group.members ) do
+			member.status = m.Types.CheckStatus.Waiting
+			if member.addon then
+				got_addon = got_addon + 1
+			end
+		end
+
+		m.group.dungeon = m.get_keys( selectedDungeons )[ 1 ]
+
+		if got_addon > 1 then
+			m.message_handler.confirm_roles( m.group.dungeon )
+		end
+
+		if got_addon ~= #m.group.members then
+
+		end
+
+		popup:Hide()
+		m.roles_status_popup.show()
+	end
+
+	---@param tab Tab?
+	local function update_layout( tab )
+		if tab then currentTab = tab end
+		m.debug( "update_layout - " .. currentTab )
+
+		if currentTab == Types.Tab.Browse then
+			popup.frame_lfg:Hide()
+			popup.frame_search:Show()
+
+			if selectedGroup and groupsData[ selectedGroup ].type == Types.GroupTypes.LFM then
+				for role in pairs( Types.Roles ) do
+					local max = role == "DPS" and 3 or 1
+					local count = groupsData[ selectedGroup ].players[ role ] and #groupsData[ selectedGroup ].players[ role ] or 0
+
+					if m.find( Types.Roles[ role ], m.classRoles[ m.player_class ] ) and count < max then
 						popup[ "btn_join_" .. string.lower( role ) ]:Enable()
 					else
 						popup[ "btn_join_" .. string.lower( role ) ]:Disable()
@@ -456,45 +476,61 @@ function M.new( options )
 				popup[ "btn_join_tank" ]:Disable()
 				popup[ "btn_join_healer" ]:Disable()
 			end
-		elseif currentTab == "LFG" then
+		elseif currentTab == Types.Tab.LFG then
+			popup.frame_search:Hide()
+			popup.frame_lfg:Show()
+			popup.btn_list:SetText( m.isQueued and m.T[ "Leave Queue" ] or m.isGrouped and m.T[ "List Group" ] or m.T[ "List Self" ] )
+
+			if m.isGrouped then
+				selectDungeonLimit = 1
+				if m.count( selectedDungeons ) > 1 then selectedDungeons = {} end
+
+				if not m.isLeader then
+					popup.lfg_dungeons:Hide()
+					popup.btn_message:Disable()
+					popup.btn_list:Disable()
+					popup.not_leader:Show()
+					return
+				end
+			else
+				selectDungeonLimit = 5
+			end
+			popup.lfg_dungeons:Show()
+			popup.not_leader:Hide()
+			popup.btn_message:Enable()
+
+			update_message()
+
 			local dCount = m.count( selectedDungeons )
 			local rCount = m.count( options.dungeonRoles )
 
-			if popup then
-				if dCount > 0 and rCount > 0 then
-					popup.btn_find:Enable()
-				else
-					popup.btn_find:Disable()
-				end
+			if (dCount > 0 and rCount > 0) or m.isQueued then
+				popup.btn_list:Enable()
+				--if m.isGrouped and m.group.count ~= m.group.online then
+				--		popup.btn_list:Disable()
+				--end
+			else
+				popup.btn_list:Disable()
 			end
 		end
 	end
 
-	local function btn_find_on_click( self )
+	local function btn_list_on_click()
 		if m.isQueued then
 			m.message_handler.lfg_remove()
 		else
-			local msg = ""
-			for role in pairs( options.dungeonRoles ) do
-				msg = msg .. (msg ~= "" and "/" or "") .. role
+			if m.isGrouped then
+				confirm_roles()
+				return
 			end
 
-			msg = msg .. " LFG "
-
-			local count = 0
-			for dungeon in pairs( selectedDungeons ) do
-				msg = msg .. (count > 0 and "/" or "") .. string.upper( dungeon )
-
-				count = count + 1
+			local msg = m.generate_message( selectedDungeons )
+			if dungeonsDisplayed == 9 then
+				msg = popup.editbox_message.get_text()
 			end
 
 			m.message_handler.lfg_add( msg )
 		end
-	end
-
-	local function btn_view_on_click( self )
-		currentView = currentView == 1 and 2 or 1
-		update_list()
 	end
 
 	local function dd_dungeon_type_init( self )
@@ -510,7 +546,7 @@ function M.new( options )
 					dungeonType = selected
 					UIDropDownMenu_SetText( dungeonTypes[ dungeonType ], popup.dropdown_dungeon_type )
 				end
-				m.db.options.dungeonType = dungeonType
+				options.dungeonType = dungeonType
 				get_dungeons()
 				update_dungeons()
 			end
@@ -519,6 +555,32 @@ function M.new( options )
 		local c = m.player_level == 70 and 3 or 2
 		for i = 1, c do
 			info.text = dungeonTypes[ i ]
+			info.value = i
+			info.arg1 = i
+			UIDropDownMenu_AddButton( info )
+		end
+	end
+
+	local function dd_search_type_init( self )
+		local info = {
+			notCheckable = true,
+			text = "",
+			value = "",
+			func = function( selected )
+				if m.isModern then
+					currentBrowseView = selected.value
+					UIDropDownMenu_SetText( self, browseTypes[ currentBrowseView ] )
+				else
+					currentBrowseView = selected
+					UIDropDownMenu_SetText( browseTypes[ currentBrowseView ], popup.dropdown_search_type )
+				end
+				options.currentBrowseView = currentBrowseView
+				update_browse_list()
+			end
+		}
+
+		for i = 1, 3 do
+			info.text = browseTypes[ i ]
 			info.value = i
 			info.arg1 = i
 			UIDropDownMenu_AddButton( info )
@@ -559,8 +621,9 @@ function M.new( options )
 
 			for _, p in pairs( data.players[ role ] ) do
 				tooltip = tooltip ..
-						string.format( "%s %d %s\n", m.player_to_colorized_string( p ), p[ 3 ], m.capitalize( m.Types.PlayerClass[ p[ 2 ] ] ) )
+						string.format( "%s %d %s\n", m.player_to_colorized_string( p ), p[ 3 ], m.capitalize( Types.PlayerClass[ p[ 2 ] ] ) )
 			end
+			tooltip = string.sub( tooltip, 1, -2 )
 
 			GameTooltip:SetOwner( self, "ANCHOR_RIGHT" )
 			GameTooltip:SetText( tooltip, HIGHLIGHT_FONT_COLOR.r, HIGHLIGHT_FONT_COLOR.g, HIGHLIGHT_FONT_COLOR.b, nil, false )
@@ -612,7 +675,8 @@ function M.new( options )
 			else
 				selectedDungeons[ frame.instance ] = nil
 			end
-			update_status()
+			update_dungeons()
+			update_layout()
 		end )
 
 		cb:SetScript( "OnEnter", function( self )
@@ -668,7 +732,7 @@ function M.new( options )
 		desc:SetPoint( "TOPLEFT", frame, "TOPLEFT", 5, -18 )
 		frame.description = desc
 
-		for role in pairs( m.Types.Roles ) do
+		for role in pairs( Types.Roles ) do
 			---@class RoleFrame: Frame
 			local f = CreateFrame( "Frame", nil, frame )
 			f:SetHeight( 12 )
@@ -686,10 +750,12 @@ function M.new( options )
 			f.number:SetPoint( "LEFT", f.icon, "RIGHT", 3, 0 )
 
 			f:SetScript( "OnEnter", function( self )
+				self:GetParent():LockHighlight()
 				on_role_enter( self, role )
 			end )
 
 			f:SetScript( "OnLeave", function( self )
+				self:GetParent():UnlockHighlight()
 				on_role_leave( self )
 			end )
 
@@ -713,7 +779,7 @@ function M.new( options )
 				self:LockHighlight()
 			end
 
-			update_status()
+			update_layout()
 		end )
 
 		tinsert( groupEntryFrames, frame )
@@ -746,6 +812,10 @@ function M.new( options )
 		text:SetPoint( "LEFT", frame, "LEFT", 20, -6 )
 		frame.text = text
 
+		frame:SetScript( "OnDoubleClick", function()
+			ChatFrame_SendTell( frame.player_name )
+		end )
+
 		tinsert( playerEntryFrames, frame )
 		return frame
 	end
@@ -756,14 +826,19 @@ function M.new( options )
 		-- ##########################################
 		---@class LFGFrame: Frame
 		local frame = CreateFrame( "Frame", "CSLFGPopup", UIParent )
-		frame:SetWidth( 384 )
-		frame:SetHeight( 512 )
+		frame:SetWidth( 352 ) --384 )
+		frame:SetHeight( 468 ) --512 )
 		frame:EnableMouse( true )
 		frame:SetMovable( true )
 		frame:RegisterForDrag( "LeftButton" )
 		frame:SetPoint( "CENTER", UIParent, "CENTER", 0, 0 )
 		tinsert( UISpecialFrames, frame:GetName() )
-
+		--[[
+		local tmp = frame:CreateTexture( nil, "BACKGROUND" )
+		tmp:SetTexture( "Interface/Buttons/WHITE8x8" )
+		tmp:SetVertexColor( 0,0.8,0,0.4)
+		tmp:SetAllPoints()
+]]
 		frame:SetScript( "OnDragStart", function( self )
 			if not self:IsMovable() then return end
 			self:StartMoving()
@@ -775,7 +850,7 @@ function M.new( options )
 		end )
 
 		frame:SetScript( "OnHide", function()
-			m.hide_lfg_messages = 0
+
 		end )
 
 		local portrait = frame:CreateTexture( nil, "BACKGROUND" )
@@ -784,8 +859,8 @@ function M.new( options )
 		portrait:SetHeight( 64 )
 		portrait:SetPoint( "TOPLEFT", frame, "TOPLEFT", 12, -6 )
 
-		local btnClose = CreateFrame( "Button", nil, frame, "UIPanelCloseButton" )
-		btnClose:SetPoint( "TOPRIGHT", frame, "TOPRIGHT", -27, -8 )
+		local btn_close = CreateFrame( "Button", nil, frame, "UIPanelCloseButton" )
+		btn_close:SetPoint( "TOPRIGHT", frame, "TOPRIGHT", 4, -8 )
 
 		-- ##########################################
 		-- LFG Frame
@@ -793,16 +868,17 @@ function M.new( options )
 		---@class Frame
 		local frame_lfg = CreateFrame( "Frame", nil, frame )
 		frame_lfg:SetAllPoints( frame )
+		frame.frame_lfg = frame_lfg
 
 		local title = frame_lfg:CreateFontString( nil, "ARTWORK", "GameFontNormal" )
-		title:SetPoint( "TOP", frame_lfg, "TOP", 0, -18 )
-		title:SetText( m.T[ 'Group Finder' ] )
+		title:SetPoint( "TOP", frame_lfg, "TOP", 20, -18 )
+		title:SetText( m.T[ 'Looking For Group' ] )
 
 		local bgwall = frame_lfg:CreateTexture( nil, "BACKGROUND" )
 		bgwall:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\ui-lfg-background-dungeonwall]] )
 		bgwall:SetWidth( 512 )
 		bgwall:SetHeight( 256 )
-		bgwall:SetPoint( "TOP", frame_lfg, "TOP", 85, -155 )
+		bgwall:SetPoint( "TOPLEFT", frame_lfg, "TOPLEFT", 22, -155 )
 
 		local bgframe = frame_lfg:CreateTexture( nil, "ARTWORK" )
 		bgframe:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\ui-lfg-frame]] )
@@ -810,30 +886,65 @@ function M.new( options )
 		bgframe:SetHeight( 512 )
 		bgframe:SetPoint( "TOPLEFT", frame_lfg, "TOPLEFT", 0, 0 )
 
-		local btn_find = CreateFrame( "Button", nil, frame_lfg, "UIPanelButtonTemplate" )
-		btn_find:SetWidth( 109 )
-		btn_find:SetHeight( 21 )
-		btn_find:SetPoint( "BOTTOM", frame_lfg, "BOTTOM", -9, 80 )
-		btn_find:SetText( m.T[ "Find Group" ] )
-		btn_find:Disable()
-		btn_find:SetScript( "OnClick", btn_find_on_click )
-		frame.btn_find = btn_find
+		local btn_message = CreateFrame( "Button", nil, frame_lfg, "UIPanelButtonTemplate" )
+		btn_message:SetWidth( 109 )
+		btn_message:SetHeight( 22 )
+		btn_message:SetPoint( "BOTTOMLEFT", frame_lfg, "BOTTOMLEFT", 20, 35 )
+		btn_message:SetText( m.T[ "Edit message" ] )
+		btn_message:SetScript( "OnClick", function( self )
+			if dungeonsDisplayed == 9 then
+				dungeonsDisplayed = 12
+				self:SetText( m.T[ "Edit message" ] )
+				popup.editbox_message:Hide()
+				popup.line1:Hide()
+				popup.line2:Hide()
+			else
+				dungeonsDisplayed = 9
+				self:SetText( m.T[ "Hide message" ] )
+				popup.editbox_message:Show()
+				popup.line1:Show()
+				popup.line2:Show()
+			end
+			popup.lfg_dungeons_scroll_frame.set_height( dungeonEntryHeight * dungeonsDisplayed )
+			update_layout()
+			update_dungeons()
+		end )
+		frame.btn_message = btn_message
 
-		local role1 = m.create_role_button( frame_lfg, m.Types.Roles.DPS, options, update_status )
+		local btn_list = CreateFrame( "Button", nil, frame_lfg, "UIPanelButtonTemplate" )
+		btn_list:SetWidth( 109 )
+		btn_list:SetHeight( 22 )
+		btn_list:SetPoint( "BOTTOMRIGHT", frame_lfg, "BOTTOMRIGHT", -6, 35 )
+		btn_list:SetText( m.T[ "List Self" ] )
+		btn_list:Disable()
+		btn_list:SetScript( "OnClick", btn_list_on_click )
+		frame.btn_list = btn_list
+		m.F = btn_list
+
+		local role1 = m.create_player_role_button( frame_lfg, "DPS", options, update_layout )
 		role1:SetPoint( "TOPLEFT", frame_lfg, "TOPLEFT", 74, -52 )
 
-		local role2 = m.create_role_button( frame_lfg, m.Types.Roles.Tank, options, update_status )
+		local role2 = m.create_player_role_button( frame_lfg, "Tank", options, update_layout )
 		role2:SetPoint( "LEFT", role1, "RIGHT", 44, 0 )
 
-		local role3 = m.create_role_button( frame_lfg, m.Types.Roles.Healer, options, update_status )
+		local role3 = m.create_player_role_button( frame_lfg, "Healer", options, update_layout )
 		role3:SetPoint( "LEFT", role2, "RIGHT", 44, 0 )
 
-
+		local not_leader = frame_lfg:CreateFontString( nil, "ARTWORK", "GameFontNormal" )
+		not_leader:SetPoint( "CENTER", frame_lfg, "CENTER", 0, -30 )
+		not_leader:SetText( m.T[ 'Only group leader can list group' ] )
+		not_leader:Hide()
+		frame.not_leader = not_leader
 
 		-- ##########################################
+		-- LFG Dungeons Frame
+		local frame_lfg_dungeons = CreateFrame( "Frame", nil, frame_lfg )
+		frame_lfg_dungeons:SetAllPoints()
+		frame.lfg_dungeons = frame_lfg_dungeons
+
 		-- Dungeon Type Dropdown
-		local dd = CreateFrame( "Button", "CSLFGDungeonTypeDropDown", frame_lfg, "UIDropDownMenuTemplate" )
-		dd:SetPoint( "TOPRIGHT", frame_lfg, "TOPRIGHT", -24, -125 )
+		local dd = CreateFrame( "Button", "CSLFGDungeonTypeDropDown", frame_lfg_dungeons, "UIDropDownMenuTemplate" )
+		dd:SetPoint( "TOPRIGHT", frame_lfg_dungeons, "TOPRIGHT", -12, -125 )
 		if m.isModern then
 			UIDropDownMenu_SetWidth( dd, 150 )
 			UIDropDownMenu_SetText( dd, dungeonTypes[ dungeonType ] )
@@ -844,25 +955,47 @@ function M.new( options )
 		UIDropDownMenu_Initialize( dd, dd_dungeon_type_init )
 		frame.dropdown_dungeon_type = dd
 
-		local dd_label = frame_lfg:CreateFontString( nil, "ARTWORK", "GameFontNormal" )
+		local dd_label = frame_lfg_dungeons:CreateFontString( nil, "ARTWORK", "GameFontNormal" )
 		dd_label:SetPoint( "RIGHT", dd, "LEFT", 10, 1 )
 		dd_label:SetText( m.T[ "Type:" ] )
 
-		-- ##########################################
 		-- Dungeons ScrollFrame
-		local scroll_frame = m.create_scroll_bar( frame_lfg, "CSLFGScrollBar", 317, 252, function()
+		local scroll_frame = m.create_scroll_bar( frame_lfg_dungeons, "CSLFGScrollBar", 317, dungeonEntryHeight * dungeonsDisplayed, function()
 			update_dungeons()
 		end )
-		scroll_frame:SetPoint( "TOPLEFT", frame_lfg, "TOPLEFT", 25, -158 )
+		scroll_frame:SetPoint( "TOPLEFT", frame_lfg_dungeons, "TOPLEFT", 25, -158 )
 		scroll_frame.set_mousewheel_step( 5 )
-		frame.lfg_scrollbar = scroll_frame.scroll_bar
+		frame.lfg_dungeons_scroll_frame = scroll_frame
+		frame.lfg_dungeons_scrollbar = scroll_frame.scroll_bar
 
-		-- ##########################################
 		-- Dungeon Entries
 		for i = 1, dungeonsDisplayed do
-			local entry = create_dungeon_entry( frame_lfg )
-			entry:SetPoint( "TOPLEFT", frame_lfg, "TOPLEFT", 25, -dungeonEntryHeight * (i - 1) - 157 )
+			local entry = create_dungeon_entry( frame_lfg_dungeons )
+			entry:SetPoint( "TOPLEFT", frame_lfg_dungeons, "TOPLEFT", 25, -dungeonEntryHeight * (i - 1) - 157 )
 		end
+
+		local line1 = frame_lfg_dungeons:CreateTexture( nil, "ARTWORK" )
+		line1:SetTexture( "Interface/Buttons/WHITE8x8" )
+		line1:SetVertexColor( 0.5, 0.5, 0.5, 1 )
+		line1:SetPoint( "TOPLEFT", frame_lfg_dungeons, "TOPLEFT", 22, -347 )
+		line1:SetPoint( "BOTTOMRIGHT", frame_lfg_dungeons, "TOPRIGHT", -9, -348 )
+		line1:Hide()
+		frame.line1 = line1
+
+		local line2 = frame_lfg_dungeons:CreateTexture( nil, "ARTWORK" )
+		line2:SetTexture( "Interface/Buttons/WHITE8x8" )
+		line2:SetVertexColor( 0.2, 0.2, 0.2, 1 )
+		line2:SetPoint( "TOPLEFT", frame_lfg_dungeons, "TOPLEFT", 22, -348 )
+		line2:SetPoint( "BOTTOMRIGHT", frame_lfg_dungeons, "TOPRIGHT", -9, -349 )
+		line2:Hide()
+		frame.line2 = line2
+
+		local editbox_message = m.create_multiline_editbox( frame_lfg_dungeons, 170 )
+		editbox_message:SetPoint( "TOPLEFT", frame_lfg_dungeons, "TOPLEFT", 32, -354 )
+		editbox_message:SetWidth( 300 )
+		editbox_message:SetHeight( 48 )
+		editbox_message:Hide()
+		frame.editbox_message = editbox_message
 
 		-- ##########################################
 		-- Search Frame
@@ -871,9 +1004,10 @@ function M.new( options )
 		local frame_search = CreateFrame( "Frame", nil, frame )
 		frame_search:SetAllPoints( frame )
 		frame_search:Hide()
+		frame.frame_search = frame_search
 
 		title = frame_search:CreateFontString( nil, "ARTWORK", "GameFontNormal" )
-		title:SetPoint( "TOP", frame_search, "TOP", 0, -18 )
+		title:SetPoint( "TOP", frame_search, "TOP", 20, -18 )
 		title:SetText( m.T[ 'Search Groups' ] )
 
 		bgframe = frame_search:CreateTexture( nil, "ARTWORK" )
@@ -891,6 +1025,7 @@ function M.new( options )
 		edit_min:SetWidth( 20 )
 		edit_min:SetHeight( 20 )
 		edit_min:SetAutoFocus( false )
+		edit_min:SetMaxLetters( 2 )
 		edit_min:SetText( tostring( options.lvlmin ) )
 		edit_min:SetScript( "OnTextChanged", handle_lvl_text_changed )
 		edit_min:SetScript( "OnEnterPressed", handle_lvl_enter_pressed )
@@ -904,26 +1039,27 @@ function M.new( options )
 		edit_max:SetWidth( 20 )
 		edit_max:SetHeight( 20 )
 		edit_max:SetAutoFocus( false )
+		edit_max:SetMaxLetters( 2 )
 		edit_max:SetText( tostring( options.lvlmax ) )
 		edit_max:SetScript( "OnTextChanged", handle_lvl_text_changed )
 		edit_max:SetScript( "OnEnterPressed", handle_lvl_enter_pressed )
 
-		local btn_view = CreateFrame( "Button", nil, frame_search, "UIPanelButtonTemplate" )
-		btn_view:SetPoint( "TOPRIGHT", frame_search, "TOPRIGHT", -40, -44 )
-		btn_view:SetWidth( 80 )
-		btn_view:SetHeight( 21 )
-		btn_view:SetText( m.T[ "Change view" ] )
-		btn_view:SetScript( "OnClick", btn_view_on_click )
-		--[[
-		local cb = CreateFrame( "CheckButton", "CSLFG_cb_search_group", frame_search, "UICheckButtonTemplate" )
-		cb:SetPoint( "TOPLEFT", frame_search, "TOPLEFT", 260, -40 )
-		local cbText = _G[ "CSLFG_cb_search_groupText" ]
-		cbText:SetText( m.T[ "Groups only" ] )
-]]
+		local dd_search = CreateFrame( "Button", "CSLFGSearchDropDown", frame_search, "UIDropDownMenuTemplate" )
+		dd_search:SetPoint( "TOPRIGHT", frame_search, "TOPRIGHT", 7, -40 )
+		if m.isModern then
+			UIDropDownMenu_SetWidth( dd_search, 110 )
+			UIDropDownMenu_SetText( dd_search, browseTypes[ currentBrowseView ] )
+		else
+			UIDropDownMenu_SetWidth( 110, dd_search )
+			UIDropDownMenu_SetText( browseTypes[ currentBrowseView ], dd_search )
+		end
+		UIDropDownMenu_Initialize( dd_search, dd_search_type_init )
+		frame.dropdown_search_type = dd_search
+
 		-- ##########################################
 		-- Groups ScrollFrame
 		scroll_frame = m.create_scroll_bar( frame_search, "CSLFGSearchScrollBar", 317, 333, function()
-			update_list()
+			update_browse_list()
 		end )
 		scroll_frame:SetPoint( "TOPLEFT", frame_search, "TOPLEFT", 25, -76 )
 		frame.search_scrollbar = scroll_frame.scroll_bar
@@ -944,14 +1080,13 @@ function M.new( options )
 
 		-- Empty message
 		local empty = frame_search:CreateFontString( nil, "ARTWORK", "GameFontNormal" )
-		empty:SetPoint( "CENTER", frame_lfg, "CENTER", -10, 20 )
+		empty:SetPoint( "CENTER", frame_lfg, "CENTER", 0, 10 )
 		empty:SetText( m.T[ 'No players are currently Looking for Group' ] )
 		empty:Hide()
 		frame.empty = empty
 
-
 		-- Buttons
-		for role in pairs( m.Types.Roles ) do
+		for role in pairs( Types.Roles ) do
 			local btn = CreateFrame( "Button", nil, frame_search, "UIPanelButtonTemplate" )
 			btn:SetWidth( 109 )
 			btn:SetHeight( 21 )
@@ -964,45 +1099,42 @@ function M.new( options )
 			frame[ "btn_join_" .. string.lower( role ) ] = btn
 		end
 
-		frame[ "btn_join_dps" ]:SetPoint( "BOTTOM", frame_lfg, "BOTTOM", -118, 80 )
-		frame[ "btn_join_tank" ]:SetPoint( "BOTTOM", frame_lfg, "BOTTOM", -9, 80 )
-		frame[ "btn_join_healer" ]:SetPoint( "BOTTOM", frame_lfg, "BOTTOM", 100, 80 )
+		frame[ "btn_join_dps" ]:SetPoint( "BOTTOMLEFT", frame_lfg, "BOTTOMLEFT", 20, 36 )
+		frame[ "btn_join_tank" ]:SetPoint( "BOTTOM", frame_lfg, "BOTTOM", 8, 36 )
+		frame[ "btn_join_healer" ]:SetPoint( "BOTTOMRIGHT", frame_lfg, "BOTTOMRIGHT", -6, 36 )
 
-
-		btnClose:SetFrameLevel( frame_lfg:GetFrameLevel() + 1 )
+		btn_close:SetFrameLevel( frame_lfg:GetFrameLevel() + 1 )
 		-- ##########################################
 		-- Tabs
 		-- ##########################################
 		local tab1 = CreateFrame( "Button", "CSLFGPopupTab1", frame, "CharacterFrameTabButtonTemplate" )
 		tab1:SetID( 1 )
-		tab1:SetPoint( "BOTTOMLEFT", frame, "BOTTOMLEFT", 13, 42 )
-		tab1:SetText( m.T[ "Dungeons" ] )
+		tab1:SetPoint( "BOTTOMLEFT", frame, "BOTTOMLEFT", 12, 0 )
+		tab1:SetFrameLevel( frame:GetFrameLevel() + 1 )
+		tab1:SetText( m.T[ "Create Listing" ] )
 		tab1:SetScript( "OnClick", function()
-			currentTab = "LFG"
-			frame_search:Hide()
-			frame_lfg:Show()
+			update_layout( Types.Tab.LFG )
 			PanelTemplates_SetTab( frame, 1 )
 			m.play_sound( "igCharacterInfoTab" )
 		end )
 
 		if m.isModern then
-			PanelTemplates_TabResize( tab1, 5, 100 )
+			PanelTemplates_TabResize( tab1, 5, 120 )
 		else
-			PanelTemplates_TabResize( 5, tab1, 100 )
+			PanelTemplates_TabResize( 5, tab1, 120 )
 		end
 
 		local tab2 = CreateFrame( "Button", "CSLFGPopupTab2", frame, "CharacterFrameTabButtonTemplate" )
 		tab2:SetID( 2 )
 		tab2:SetPoint( "LEFT", tab1, "RIGHT", -17, 0 )
+		tab2:SetFrameLevel( frame:GetFrameLevel() + 1 )
 		tab2:SetText( m.T[ "Browse" ] )
 		tab2:SetScript( "OnClick", function()
-			currentTab = "Browse"
-			frame_lfg:Hide()
-			frame_search:Show()
-			m.message_handler.lfg_list( options.lvlmin, options.lvlmax )
-
+			update_layout( Types.Tab.Browse )
+			update_browse_list()
 			PanelTemplates_SetTab( frame, 2 )
 			m.play_sound( "igCharacterInfoTab" )
+			m.message_handler.lfg_list( options.lvlmin, options.lvlmax )
 		end )
 
 		if m.isModern then
@@ -1017,45 +1149,23 @@ function M.new( options )
 		return frame
 	end
 
-	local function set_lfg()
-		if popup then
-			if m.isQueued then
-				popup.btn_find:SetText( m.T[ "Leave Queue" ] )
-			else
-				popup.btn_find:SetText( m.T[ "Find Group" ] )
-			end
-
-			if popup:IsVisible() then
-				update_dungeons()
-				update_status()
-			end
-		end
-	end
-
-	local function check_lfg_status()
-		if not next( selectedDungeons ) then
-			for _, entry in pairs( m.lfg_list ) do
-				if entry.player[ 1 ] == m.player_name then
-					for _, dungeon in pairs( entry.dungeons ) do
-						selectedDungeons[ dungeon ] = true
-					end
-					set_lfg()
-					break
-				end
-			end
-		end
-	end
-
 	local function show()
 		if not popup then
 			popup = create_frame()
 		end
 
+		if m.isGrouped and m.isLeader then
+			m.scan_party()
+		end
+
+		update_layout()
 		get_dungeons()
-		check_lfg_status()
-		--get_groups()
 		update_dungeons()
-		m.hide_lfg_messages = 1
+
+		if currentTab == Types.Tab.Browse then
+			m.message_handler.lfg_list( options.lvlmin, options.lvlmax )
+		end
+
 		popup:Show()
 	end
 
@@ -1073,9 +1183,19 @@ function M.new( options )
 		end
 	end
 
+	local function is_visible()
+		return popup and popup:IsVisible() or false
+	end
+
 	local function update()
 		if popup and popup:IsVisible() then
-			update_list()
+			update_layout()
+			if currentTab == m.Types.Tab.LFG then
+				get_dungeons()
+				update_dungeons()
+			elseif currentTab == m.Types.Tab.Browse then
+				update_browse_list()
+			end
 		end
 	end
 
@@ -1084,7 +1204,7 @@ function M.new( options )
 		show = show,
 		hide = hide,
 		toggle = toggle,
-		set_lfg = set_lfg,
+		is_visible = is_visible,
 		update = update
 	}
 end

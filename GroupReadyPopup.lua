@@ -134,12 +134,12 @@ function M.new()
 		} )
 
 		popup.dungeon_name:SetText( dungeon.name )
-		popup.role_name:SetText( role == m.Types.Roles.DPS and "Damage" or role )
-		if role == m.Types.Roles.DPS then
+		popup.role_name:SetText( role == "DPS" and "Damage" or role )
+		if role == "DPS" then
 			popup.role_icon:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\damage2]] )
-		elseif role == m.Types.Roles.Tank then
+		elseif role == "Tank" then
 			popup.role_icon:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\tank2]] )
-		elseif role == m.Types.Roles.Healer then
+		elseif role == "Healer" then
 			popup.role_icon:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\healer2]] )
 		end
 
@@ -152,11 +152,7 @@ function M.new()
 			popup = create_frame()
 		end
 
-		role = m.Types.Roles.DPS
-		dungeon = m.dungeons[ "dm" ]
-
 		update_frame( dungeon, role )
-
 		popup:Show()
 	end
 

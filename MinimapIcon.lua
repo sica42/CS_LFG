@@ -50,12 +50,36 @@ function M.new()
 
 	---@param tooltip Tooltip
 	function obj.OnTooltipShow( tooltip )
-		tooltip:AddLine( m.T[ "CrusaderStormLFG" ] )
-		tooltip:AddLine( m.T[ "Left-click to toggle." ], 0.5, 0.5, 0.5 )
+		tooltip:AddLine( m.T[ "LFG Tool" ], 1, 1, 1 )
+
+		if m.isQueued then
+			if m.isGrouped then
+				tooltip:AddLine( string.format( "Group is queued for %s", m.dungeons[ m.group.dungeon ].name ) )
+			else
+				local dungeons = ""
+				for dungeon_code in pairs( m.selectedDungeons ) do
+					local code, heroic = m.dungeon_code_hc( dungeon_code )
+					dungeons = dungeons .. "\n" .. m.dungeons[ code ].name .. (heroic and " HC" or "")
+				end
+				tooltip:AddLine( string.format( "Queued for:|cffffffff%s|r", dungeons ) )
+			end
+		else
+			tooltip:AddLine( "Idle" )
+		end
+
+		tooltip:AddLine( " " )
+		tooltip:AddLine( m.T[ "|cffA0A0A0Left Click|r: Toggle window" ] )
+		if m.isQueued and not m.isGrouped or (m.isGrouped and m.isLeader) then
+			tooltip:AddLine( m.T[ "|cffA0A0A0Ctrl+Left Click|r: Leave queue" ] )
+		end
 	end
 
 	function obj:OnClick( button )
 		if button == "LeftButton" then
+			if IsControlKeyDown() and m.isQueued then
+				m.message_handler.lfg_remove()
+				return
+			end
 			m.lfg_popup.toggle()
 		end
 	end

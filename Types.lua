@@ -12,12 +12,46 @@ local M = {}
 ---| "Tank"
 ---| "Healer"
 local Roles = {
-	DPS = m.T[ "DPS" ],
-	Tank = m.T[ "Tank" ],
-	Healer = m.T[ "Healer" ]
+	DPS = 1,
+	Tank = 2,
+	Healer = 4
 }
 
 M.Roles = Roles
+
+---@alias LFGView
+---| "Intro"
+---| "Dungeons"
+---| "Custom"
+local LFGView = {
+	Intro = "Intro",
+	Dungeons = "Dungeons",
+	Custom = "Custom"
+}
+
+M.LFGView = LFGView
+
+---@alias BrowseView
+---| "All"
+---| "Dungeon"
+---| "Group"
+local BrowseView = {
+	All = "All",
+	Dungeon = "Dungeon",
+	Group = "Group"
+}
+
+M.BrowseView = BrowseView
+
+---@alias Tab
+---| "LFG"
+---| "Browse"
+local Tab = {
+	LFG = "LFG",
+	Browse = "Browse"
+}
+
+M.Tab = Tab
 
 ---@alias CheckStatus
 ---| "Waiting"
@@ -34,7 +68,6 @@ M.CheckStatus = CheckStatus
 ---@alias GroupType
 ---| "LFG"
 ---| "LFM"
-
 local GroupTypes = {
 	LFG = "LFG",
 	LFM = "LFM"
@@ -42,34 +75,9 @@ local GroupTypes = {
 
 M.GroupTypes = GroupTypes
 
------@alias PlayerClass
------| "DRUID"
------| "HUNTER"
------|
 local PlayerClass = { "DRUID", "HUNTER", "MAGE", "PALADIN", "PRIEST", "ROGUE", "SHAMAN", "WARLOCK", "WARRIOR" }
 
 M.PlayerClass = PlayerClass
-
----@alias MessageCommand
----| "VERC"
----| "VER"
----| "GC"
----| "GD"
----| "QP"
----| "QG"
----| "DQ"
-local MessageCommand = {
-	VersionCheck = "VERC",
-	GroupConfirm = "GC",
-	GroupDecline = "GD",
-	EnqueuePlayer = "QP",
-	EnqueueGroup = "QG",
-	Dequeue = "DQ",
-}
-
-M.MessageCommand = MessageCommand
-
-
 
 m.Types = M
 return M

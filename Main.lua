@@ -4,17 +4,15 @@ CSLFG = CSLFG or {}
 ---@class CSLFG
 local m = CSLFG
 
--- /console scriptErrors 1
-
 m.name = "CS_LFG"
 m.short = "CSLFG"
-m.bot = "Foxraider"
-m.tagcolor = "FFEBC315"
+m.tagcolor = "FF60BB16"
+m.version_interval = 3600 * 24
 m.events = {}
 m.isModern = C_ChatInfo and true or false
 m.translations = (CSLFG_translation[ GetLocale() or "enUS" ])
 m.api = getfenv()
-m.debug_enabled = true
+m.debug_enabled = false
 
 ---@class LFGEntry
 ---@field lfg boolean
@@ -23,9 +21,27 @@ m.debug_enabled = true
 ---@field message string
 ---@field dungeons table<number, string>
 ---@field roles table<string>
+---@field members table
 
 ---@type table<number, LFGEntry>
 m.lfg_list = {}
+
+---@class PartyMember
+---@field name string
+---@field class string
+---@field level integer
+---@field unit string
+---@field roles table<Role, boolean>
+---@field online boolean
+---@field addon boolean?
+---@field leader boolean?
+---@field status CheckStatus?
+
+---@class PartyInfo
+---@field count integer
+---@field online integer
+---@field dungeon string?
+---@field members table<number, PartyMember>
 
 -- use table index key as translation fallback
 m.T = setmetatable( m.translations, {
@@ -43,9 +59,11 @@ BINDING_NAME_CSLFG_TOGGLE = m.T[ "Toggle Group Finder" ]
 
 local strfind = string.find
 local strmatch = string.match
+local strgmatch = string.gmatch
 local strlower = string.lower
 local strupper = string.upper
 local strgsub = string.gsub
+local strformat = string.format
 
 function CSLFG:init()
 	m.frame = CreateFrame( "Frame" )
@@ -56,32 +74,37 @@ function CSLFG:init()
 	end )
 
 	for k, _ in pairs( m.events ) do
-		if not ((k == "GROUP_JOINED" and not m.isModern) or (k == "PARTY_MEMBERS_CHANGED" and m.isModern)) then
+		if not (k == "PARTY_MEMBERS_CHANGED" and m.isModern) then
 			m.frame:RegisterEvent( k )
-		end
-	end
-
-	-- Override default I keybinding it not set to anything else
-	if not GetBindingKey( "CSLFG_TOGGLE" ) then
-		SetBinding( "I", "CSLFG_TOGGLE" )
-	end
-
-	for i = 1, NUM_CHAT_WINDOWS do
-		if i ~= 2 then
-			--m.hookChatFrame( _G[ "ChatFrame" .. i ] )
 		end
 	end
 
 	ChatFrame_AddMessageEventFilter( "CHAT_MSG_SYSTEM", function( arg1, event, message )
 		if not m.isModern then message = arg1 end
 
-		if message and m.checkMessage( message ) > 0 then
-			if m.hide_lfg_messages == 2 then m.hide_lfg_messages = 0 end
-			return true
+		if message and m.check_message( message ) then
+			if m.hide_pending_lfg_response > 0 then
+				m.hide_pending_lfg_response = m.hide_pending_lfg_response - 1
+				return true
+			end
 		end
 
 		return false
 	end )
+
+	SLASH_CSLFG1 = "/lfg"
+	SlashCmdList.CSLFG = function( args )
+		if not args or args == "" then
+			m.info( string.format( "(Version %s) Usage:", m.version), true )
+			--m.info ( "|cffaaaaaa/lfg icon_animate|r - Toggle minimap icon animation when Looking for Group.", true )
+			--m.info ( "", true)
+		elseif args == "icon_animate" then
+
+		elseif args == "debug" then
+			m.debug_enabled = not m.debug_enabled
+			m.info( "Debug messages is " .. (m.debug_enabled and "enabled." or "disabled."), true)
+		end
+	end
 end
 
 function CSLFG.events.PLAYER_LOGIN()
@@ -97,8 +120,12 @@ function CSLFG.events.PLAYER_LOGIN()
 	m.player_name = UnitName( "player" )
 	m.player_level = UnitLevel( "player" )
 	_, m.player_class = UnitClass( "player" )
+	m.isLeader = m.is_group_leader( "player" )
+	m.isGrouped = m.is_grouped()
 	m.isQueued = false
-	m.hide_lfg_messages = 0
+	m.selectedDungeons = {}
+	m.hide_pending_lfg_response = 0
+	m.version = GetAddOnMetadata( m.name, "Version" )
 
 	if not m.db.options.dungeonRoles then
 		m.db.options.dungeonRoles = {}
@@ -112,6 +139,11 @@ function CSLFG.events.PLAYER_LOGIN()
 
 	if m.isModern then
 		C_ChatInfo.RegisterAddonMessagePrefix( m.short )
+	end
+
+	-- Override default I keybinding it not set to anything else
+	if not GetBindingKey( "CSLFG_TOGGLE" ) and (not GetBindingAction( "I" ) or GetBindingAction( "I" ) == "") then
+		SetBinding( "I", "CSLFG_TOGGLE" )
 	end
 
 	---@class MinimapIcon
@@ -129,189 +161,249 @@ function CSLFG.events.PLAYER_LOGIN()
 	---@class RoleCheckPopup
 	m.role_check_popup = m.RoleCheckPopup.new( m.db.options )
 
+	---@class RolesStatusPopup
+	m.roles_status_popup = m.RolesStatusPopup.new()
+
 	---@class MessageHandler
 	m.message_handler = m.MessageHandler.new()
 
-	m.version = GetAddOnMetadata( m.name, "Version" )
-	m.info( string.format( "(v%s) Loaded", m.version ) )
+	m.message_handler.lfg_list( m.db.options.lvlmin, m.db.options.lvlmax, true )
 
-	m.hide_lfg_messages = 3           -- Only hide during scan
-	m.hide_no_guild_message = 1       -- Hide "You are not in a guild" messages during this phase
-	SendChatMessage( ".lfg", "GUILD" ) -- SAY is restricted, have to use GUILD here
+	m.check_new_version()
 end
 
-function CSLFG.events.CHAT_MSG_ADDON( prefix, message, type, sender )
-	if prefix ~= m.short then return end --or sender == m.player_name
+function CSLFG.events.CHAT_MSG_ADDON( prefix, message, channel, sender )
+	if prefix ~= m.short or sender == m.player_name then return end
 
-	m.info( "type:" .. type )
-	local cmd_pat = "^([_%u%d]-)::"
-	local command = string.match( message, cmd_pat )
-	local data_str = string.gsub( message, cmd_pat, "" )
+	local cmd_pat = "^([_%u%d]-)#"
+	local command = strmatch( message, cmd_pat )
+	local data_str = strgsub( message, cmd_pat, "" )
 
 	if command then
-		m.message_handler.on_command( command, data_str, sender )
+		m.message_handler.on_command( command, data_str, channel, sender )
 	else
 		m.debug( "Addon message missing command!?" )
 	end
 end
 
-function CSLFG.events.GROUP_JOINED()
-	if m.isQueued then
-		m.message_handler.lfg_remove()
-	end
-end
-
 function CSLFG.events.PARTY_MEMBERS_CHANGED()
-	if m.isQueued then
-		m.message_handler.lfg_remove()
-	end
+	m.debug( "PARTY_MEMBERS_CHANGED" )
+	m.group_changed()
 end
 
----@param frame MessageFrame
-function CSLFG.hookChatFrame( frame )
-	if not frame then return end
+function CSLFG.events.GROUP_ROSTER_UPDATE()
+	m.debug( "GROUP_ROSTER_UPDATE" )
+	m.group_changed()
+end
 
-	local originalAddMessage = frame.AddMessage
+function CSLFG.group_changed()
+	m.isGrouped = m.is_grouped()
+	m.isLeader = m.is_group_leader( "player" )
 
-	frame.AddMessage = function( self, message, ... )
-		if message and m.checkMessage( message ) > 0 then -- and m.hide_lfg_messages
-			if m.hide_lfg_messages == 2 then m.hide_lfg_messages = 0 end
-			return originalAddMessage( self, "", ... )
-		end
-
-		return originalAddMessage( self, message, ... )
+	if not m.isGrouped then
+		m.group = nil
 	end
+
+	if m.isQueued and (not m.isGrouped or (m.group and m.group.count ~= m.get_num_group_members())) then
+		m.isQueued = false
+		m.message_handler.lfg_remove()
+	end
+
+	if m.lfg_popup.is_visible() then
+		if m.isLeader then
+			m.delayed_scan_party( function()
+				m.lfg_popup.update()
+			end )
+		else
+			m.lfg_popup.update()
+		end
+	end
+
+	m.check_new_version( true )
+end
+
+---@param on_complete function
+function CSLFG.delayed_scan_party( on_complete )
+	local max_delay = 1
+	m.frame:SetScript( "OnUpdate", function( _, elapsed )
+		max_delay = max_delay - elapsed
+		if (not m.isGrouped or UnitIsConnected( "party1" )) or max_delay <= 0 then
+			m.frame:SetScript( "OnUpdate", nil )
+			m.scan_party()
+			if on_complete then on_complete() end
+		end
+	end )
+end
+
+function CSLFG.scan_party()
+	m.debug( "scan_party" )
+
+	---@type PartyMember
+	local player = {
+		addon = true,
+		leader = m.is_group_leader( "player" ),
+		online = true,
+		name = m.player_name,
+		class = m.player_class,
+		level = m.player_level,
+		unit = "player",
+		roles = m.db.options.dungeonRoles
+	}
+
+	---@type PartyInfo
+	m.group = {
+		count = m.get_num_group_members(),
+		online = 1,
+		members = { player }
+	}
+
+	for i = 1, m.group.count - 1 do
+		local unit = "party" .. i
+		local level = UnitLevel( unit )
+		local name = UnitName( unit )
+		local _, class = UnitClass( unit )
+
+		if name and class then
+			local online = false
+			if UnitIsConnected( unit ) then
+				m.group.online = m.group.online + 1
+				online = true
+			end
+
+			---@type PartyMember
+			local member = {
+				name = name,
+				class = class,
+				level = level,
+				leader = m.is_group_leader( unit ),
+				unit = unit,
+				roles = {},
+				online = online
+			}
+
+			m.group.members[ #m.group.members + 1 ] = member
+		end
+	end
+
+	table.sort( m.group.members, function( a, b )
+		return a.leader and not b.leader
+	end )
+
+	m.message_handler.ping_group()
 end
 
 ---@param message string
----@return integer
-function CSLFG.checkMessage( message )
+---@return boolean
+function CSLFG.check_message( message )
 	if strfind( message, "Looking for Group", nil, true ) then
-		m.hide_no_guild_message = 0
 		if strfind( message, "You are now listed as Looking for Group.", nil, true ) then
-			m.setLFG( true )
-			return m.hide_lfg_messages
+			m.set_lfg( true )
+			if m.hide_pending_lfg_response > 0 then
+				m.hide_pending_lfg_response = m.hide_pending_lfg_response + 1
+			end
+			return true
 		elseif strfind( message, "You are no longer Looking for Group.", nil, true ) then
-			m.setLFG( false )
-			return m.hide_lfg_messages
+			m.set_lfg( false )
+			return true
 		elseif strfind( message, "You were not Looking for Group.", nil, true ) then
-			m.setLFG( false )
-			return m.hide_lfg_messages
+			m.set_lfg( false )
+			return true
 		elseif strfind( message, "No players", nil, true ) then
 			m.lfg_list = {}
-			if m.hide_lfg_messages == 3 then m.hide_lfg_messages = 2 end
 			m.lfg_popup.update()
-			return m.hide_lfg_messages
+			return true
 		elseif strfind( message, "Players Looking for Group.-%(" ) then
 			m.lfg_count = tonumber( strmatch( message, "%((%d+)%)" ) )
 			m.lfg_list = {}
-			return m.hide_lfg_messages
+			if m.hide_pending_lfg_response > 0 then
+				m.hide_pending_lfg_response = m.hide_pending_lfg_response + m.lfg_count
+			end
+			return true
 		end
 	elseif strfind( message, "Use '.lfg remove' to delist.", nil, true ) then
-		return m.hide_lfg_messages
-	elseif strfind( message, "You are not in a guild", nil, true ) then
-		return m.hide_no_guild_message
+		return true
 	end
 
 	local player, level, class, msg = strmatch( message, "|Hplayer:%w+|h%[(%w+)%]|h|r%s%((%d+)%s(%w+)%)%s%-%s(.*)" )
 	if player then
 		local lower = strlower( msg )
-		local dungeons = m.parseDungeons( lower )
-		local roles = m.parseRoles( lower )
-		local lfm = strfind( lower, "lfm", nil, true ) and true or false
-		local _, class_id = m.find( strupper( class ), m.Types.PlayerClass )
+		local lfm = strfind( lower, "lf%d?m" ) and true or false
+		local class_id = m.find( strupper( class ), m.Types.PlayerClass )
+		local dungeons = m.parse_dungeons( lower )
+		level = tonumber( level )
 
-		table.insert( m.lfg_list, {
-			lfg = not lfm,
-			lfm = lfm,
-			player = { player, class_id, level },
-			roles = roles,
-			dungeons = dungeons,
-			message = msg
-		} )
+		if lfm then
+			local player_roles = strmatch( lower, "§(%d+)," )
 
-		if player == m.player_name then
-			m.setLFG( true )
+			if strfind( msg, "§", nil, true ) then
+				msg = strsub( msg, 1, strfind( msg, "§", nil, true ) - 1 )
+			end
+
+			table.insert( m.lfg_list, {
+				lfg = false,
+				lfm = true,
+				player = { player, class_id, level },
+				roles = player_roles and m.bitmask_to_roles( tonumber( player_roles ) ),
+				dungeons = dungeons,
+				members = m.parse_group_members( lower ),
+				message = msg
+			} )
+		else
+			table.insert( m.lfg_list, {
+				lfg = true,
+				lfm = false,
+				player = { player, class_id, level },
+				roles = m.parse_roles( lower ),
+				dungeons = dungeons,
+				message = msg
+			} )
 		end
 
-		if getn( m.lfg_list ) == m.lfg_count then
-			m.debug( string.format( "Received %d LFG entries.", m.lfg_count ) )
+		if player == m.player_name then
+			if not next( m.selectedDungeons ) then
+				for _, dungeon in pairs( dungeons ) do
+					m.selectedDungeons[ dungeon ] = true
+				end
+			end
+			m.set_lfg( true )
+		end
 
-			-- TEST DATA
-			table.insert( m.lfg_list, {
-				lfg = true,
-				lfm = false,
-				player = { "Sica", 2, 70 },
-				dungeons = { "sv" },
-				roles = { m.Types.Roles.DPS },
-				message = "Test entry with a very long description to test the ui for looong string. how long can this be? this is way to long"
-			} )
+		if #m.lfg_list == m.lfg_count then
+			m.lfg_list_timestamp = time()
+			m.debug( strformat( "Received %d LFG entries.", m.lfg_count ) )
 
-			table.insert( m.lfg_list, {
-				lfg = true,
-				lfm = false,
-				player = { "Borazor", 7, 70 },
-				dungeons = { "sv" },
-				roles = { m.Types.Roles.Healer },
-				message = "Test entry with a very long description to test the ui for looong string. how long can this be? this is way to long"
-			} )
-
-			table.insert( m.lfg_list, {
-				lfg = true,
-				lfm = false,
-				player = { "Lynn", 4, 70 },
-				dungeons = { "sv" },
-				roles = { m.Types.Roles.Tank, m.Types.Roles.DPS },
-				message = "Test entry with a very long description to test the ui for looong string. how long can this be? this is way to long"
-			} )
-
-			table.insert( m.lfg_list, {
-				lfg = true,
-				lfm = false,
-				player = { "Muttekalf", 7, 70 },
-				dungeons = { "sv" },
-				roles = { m.Types.Roles.Healer, m.Types.Roles.DPS },
-				message = "Test entry with a very long description to test the ui for looong string. how long can this be? this is way to long"
-			} )
-
-			table.insert( m.lfg_list, {
-				lfg = true,
-				lfm = false,
-				player = { "Nomisunrider", 3, 70 },
-				dungeons = { "sv" },
-				roles = { m.Types.Roles.DPS },
-				message = "Test entry with a very long description to test the ui for looong string. how long can this be? this is way to long"
-			} )
-
-
-
-			if m.hide_lfg_messages == 3 then m.hide_lfg_messages = 2 end
 			m.lfg_popup.update()
 		end
 
-		return m.hide_lfg_messages
+		return true
 	end
 
-	return 0
+	return false
 end
 
 ---@param msg string
 ---@return table
-function CSLFG.parseDungeons( msg )
+function CSLFG.parse_dungeons( msg )
 	local dungeons = {}
 
-	-- Remove/fix stuff that can be mistakes and dungeon codes
-	msg = strgsub( msg, "shaman", "" )
+	-- Replace some dungeons names with abbreviations
 	msg = strgsub( msg, "black morass", "bm" )
-	msg = " " .. msg .. " " -- pad for easy patter matching
+	msg = " " .. msg .. " " -- pad for easy pattern matching
 
-	for dungeon in pairs( m.dungeons ) do
-		if strfind( msg, dungeon, nil, true ) then
-			local hc = ""
-			if strfind( msg, "hc", nil, true ) or strfind( msg, "%sh%s" ) then
-				hc = "hc"
+	for _, dungeon in pairs( m.dungeons_by_length ) do
+		local match = strfind( msg, "%W" .. dungeon .. "%W" )
+		local match_hc = strfind( msg, "%W" .. dungeon .. "hc%W" )
+
+		if match or match_hc then
+			if match_hc then
+				dungeon = dungeon .. "hc"
+			else
+				if string.find( msg, "%W" .. dungeon .. "%W%shc?%W" ) then
+					dungeon = dungeon .. "hc"
+				end
 			end
-			table.insert( dungeons, dungeon .. hc )
+
+			table.insert( dungeons, dungeon )
 		end
 	end
 
@@ -320,7 +412,7 @@ end
 
 ---@param msg string
 ---@return table
-function CSLFG.parseRoles( msg )
+function CSLFG.parse_roles( msg )
 	local roles = {}
 
 	for _, role in pairs( m.Types.Roles ) do
@@ -330,21 +422,31 @@ function CSLFG.parseRoles( msg )
 	end
 
 	if strfind( msg, "resto", nil, true ) then
-		table.insert( roles, m.Types.Roles.Healer )
+		table.insert( roles, "Healer" )
 	end
 
 	if not next( roles ) then
-		table.insert( roles, m.Types.Roles.DPS )
+		table.insert( roles, "DPS" )
 	end
 
 	return roles
 end
 
--- /dump CSLFG.lfgList
--- /script CSLFG.hide_lfg_messages = false
+function CSLFG.parse_group_members( msg )
+	local members = {}
+
+	for roles, player, class_id, level in string.gmatch( msg, "(%d)(%a+)(%d)(%d+)" ) do
+		members[ #members + 1 ] = {
+			player = { m.capitalize( player ), tonumber( class_id ), tonumber( level ) },
+			roles = m.bitmask_to_roles( tonumber( roles ) )
+		}
+	end
+
+	return members
+end
 
 ---@param state boolean
-function CSLFG.setLFG( state )
+function CSLFG.set_lfg( state )
 	m.isQueued = state
 
 	if state then
@@ -353,7 +455,114 @@ function CSLFG.setLFG( state )
 		m.minimap_icon.animate( false )
 	end
 
-	m.lfg_popup.set_lfg()
+	m.lfg_popup.update()
+end
+
+---@param dungeons table|string
+---@return string
+function CSLFG.generate_message( dungeons )
+	local msg = ""
+	local dungeon_list = {}
+
+	if type( dungeons ) == "string" then
+		dungeon_list = { strupper( dungeons ) }
+	else
+		for dungeon in pairs( dungeons ) do
+			dungeon_list[ #dungeon_list + 1 ] = strupper( dungeon )
+		end
+	end
+
+	if m.isGrouped then
+		msg = "LF" .. (5 - m.get_num_group_members()) .. "M "
+		msg = msg .. table.concat( dungeon_list, "/" )
+
+		local missing = m.get_missing_roles_message( m.group.members )
+		msg = strformat( "%s %s§", msg, missing )
+
+		for _, member in pairs( m.group.members ) do
+			local roles = m.roles_to_bitmask( member.roles )
+
+			if member.leader then
+				msg = msg .. roles
+			else
+				local class_id = m.find( member.class, m.Types.PlayerClass )
+				local player = strformat( "%d%s%d%d", roles, member.name, class_id, member.level )
+				msg = msg .. "," .. player
+			end
+		end
+	else
+		for role in pairs( m.db.options.dungeonRoles ) do
+			msg = msg .. (msg == "" and "" or "/") .. role
+		end
+
+		msg = msg .. " LFG "
+		msg = msg .. table.concat( dungeon_list, "/" )
+	end
+
+	return msg
+end
+
+function CSLFG.get_missing_roles_message( group_members )
+	local req = { Tank = 1, Healer = 1, DPS = 3 }
+	local assigned = { Tank = 0, Healer = 0, DPS = 0 }
+
+	local members = {}
+	for _, member in pairs( group_members ) do
+		local r = {}
+		for role, val in pairs( member.roles ) do if val then table.insert( r, role ) end end
+		table.insert( members, { name = member.name, roles = r, count = #r, assigned = false } )
+	end
+
+	table.sort( members, function( a, b )
+		if a.count ~= b.count then
+			return a.count < b.count
+		end
+		-- If both are equally flexible, prioritize based on Tank > Healer > DPS
+		local p = { Tank = 1, Healer = 2, DPS = 3 }
+		local pA = p[ a.roles[ 1 ] ] or 4
+		local pB = p[ b.roles[ 1 ] ] or 4
+		return pA < pB
+	end )
+
+	-- Assign Roles
+	local priorities = { "Tank", "Healer", "DPS" }
+	for _, role in ipairs( priorities ) do
+		for _, member in ipairs( members ) do
+			if not member.assigned and assigned[ role ] < req[ role ] then
+				-- Check if this role is in their allowed roles
+				for _, pRole in ipairs( member.roles ) do
+					if pRole == role then
+						assigned[ role ] = assigned[ role ] + 1
+						member.assigned = true
+						break
+					end
+				end
+			end
+		end
+	end
+
+	local missing = {}
+	for _, role in ipairs( priorities ) do
+		local gap = req[ role ] - assigned[ role ]
+		if gap > 0 then table.insert( missing, (gap > 1 and gap .. " " or "") .. role ) end
+	end
+
+	return "need " .. table.concat( missing, ", " )
+end
+
+---@param raid boolean?
+function CSLFG.check_new_version( raid )
+	local channel
+
+	if raid and (not m.db.lastVersionCheckRAID or time() - m.db.lastVersionCheckRAID > m.version_interval) then
+		channel = "RAID"
+	elseif not m.db.lastVersionCheckGUILD or time() - m.db.lastVersionCheckGUILD > m.version_interval then
+		channel = "GUILD"
+	end
+
+	if channel then
+		m.message_handler.version_check( channel )
+	end
 end
 
 CSLFG:init()

@@ -46,7 +46,7 @@ function M.new()
 			tex_icon:SetWidth( 64 )
 			tex_icon:SetHeight( 64 )
 			tex_icon:SetPoint( "TOPLEFT", frame, "TOPLEFT", 20 + 64 * (slot - 1), -40 )
-			tex_icon:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\]] .. (slot == 1 and "tank2" or slot == 2 and "healer2" or "damange2") )
+			tex_icon:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\]] .. (slot == 1 and "tank2" or slot == 2 and "healer2" or "damage2") )
 
 			local tex_check = frame:CreateTexture( nil, "OVERLAY" )
 			tex_check:SetWidth( 42 )

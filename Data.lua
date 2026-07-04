@@ -42,12 +42,26 @@ m.dungeons = {
 		maxLevel = 28,
 		background = "blackfathomdeeps"
 	},
+	[ "stockade"] = {
+		name = m.T[ "Stormwind Stockade"],
+		reqLevel = 15,
+		minLevel = 22,
+		maxLevel = 30,
+		background = "stormwindstockades"
+	},
 	[ "rfk" ] = {
 		name = m.T[ "Razorfen Kraul" ],
 		reqLevel = 17,
 		minLevel = 23,
 		maxLevel = 31,
 		background = "razorfenkraul"
+	},
+	[ "gnomer" ] = {
+		name = m.T["Gnomeregan "],
+		reqLevel = 19,
+		minLevel = 29,
+		maxLevel = 38,
+		background = "gnomeregan"
 	},
 	[ "smgraveyard" ] = {
 		name = m.T[ "Scarlet Monastery Graveyard" ],
@@ -146,7 +160,7 @@ m.dungeons = {
 		minLevel = 58,
 		maxLevel = 62,
 		heroic = true,
-		background = "hellfire"
+		background = "hellfirecitadel"
 	},
 	[ "bf" ] = {
 		name = m.T[ "The Blood Furnace" ],
@@ -154,21 +168,23 @@ m.dungeons = {
 		minLevel = 58,
 		maxLevel = 63,
 		heroic = true,
-		background = "bloodfurnace"
+		background = "hellfirecitadel"
 	},
-	[ "tsh" ] = {
+	[ "shh" ] = {
 		name = m.T[ "The Shattered Halls" ],
 		reqLevel = 55,
 		minLevel = 69,
 		maxLevel = 70,
-		heroic = true
+		heroic = true,
+		background = "hellfirecitadel"
 	},
 	[ "sp"] = {
 		name = m.T[ "Slave Pens" ],
 		reqLevel = 59,
 		minLevel = 62,
 		maxLevel = 64,
-		heroic = true
+		heroic = true,
+		background = "coilfang"
 	},
 	[ "ub"] = {
 		name = m.T[ "Underbog" ],
@@ -192,22 +208,23 @@ m.dungeons = {
 		minLevel = 64,
 		maxLevel = 66,
 		heroic = true,
-		background = "manatombs"
+		background = "auchindoun"
 	},
 	[ "ac" ] = {
 		name = m.T[ "Auchenai Crypts" ],
 		reqLevel = 62,
 		minLevel = 64,
 		maxLevel = 66,
-		heroic = true
+		heroic = true,
+		background = "auchindoun",
 	},
-	[ "sh" ] = {
+	[ "seth" ] = {
 		name = m.T[ "Sethekk Halls" ],
 		reqLevel = 63,
 		minLevel = 67,
 		maxLevel = 69,
 		heroic = true,
-		background = "sethekk"
+		background = "auchindoun"
 	},
 	[ "sl" ] = {
 		name = m.T[ "Shadow Labyrinth" ],
@@ -215,7 +232,7 @@ m.dungeons = {
 		minLevel = 69,
 		maxLevel = 70,
 		heroic = true,
-		background = "shadowlab"
+		background = "auchindoun"
 	},
 	[ "bot" ] = {
 		name = m.T[ "The Botanica" ],
@@ -246,17 +263,21 @@ m.dungeons = {
 		reqLevel = 66,
 		minLevel = 66,
 		maxLevel = 68,
-		heroic = true
+		heroic = true,
+		background = "cavernsoftime"
 	},
 	[ "bm" ] = {
 		name = m.T[ "CoT: Black Morass" ],
 		reqLevel = 68,
 		minLevel = 68,
 		maxLevel = 70,
-		background = "cotbm",
-		heoric = true
+		heoric = true,
+		background = "cotbm"
 	}
 }
+
+m.dungeons_by_length = m.get_keys( m.dungeons )
+table.sort(m.dungeons_by_length, function(a, b) return #a > #b end)
 
 m.classIndex = { "DRUID", "HUNTER", "MAGE", "PALADIN", "PRIEST", "ROGUE", "SHAMAN", "WARLOCK", "WARRIOR" }
 m.classRoles = {

@@ -39,11 +39,15 @@
         "SendAddonMessage",
         "SendChatMessage",
         "GetAddOnMetadata",
+        "GetPartyLeaderIndex",
         "NUM_CHAT_WINDOWS",
         "PARTY",
         "GROUP",
         "SAY",
-        "ChatFrame_AddMessageEventFilter"
+        "ChatFrame_AddMessageEventFilter",
+        "WHISPER",
+        "ChatFrame_SendTell",
+        "SlashCmdList"
     ],
     "Lua.diagnostics.disable": [
         "assign-type-mismatch"

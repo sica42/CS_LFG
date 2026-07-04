@@ -3,10 +3,25 @@ CSLFG = CSLFG or {}
 ---@class CSLFG
 local M = CSLFG
 
-local Roles = M.Types.Roles
 local soundMap = {
 	[ "igCharacterInfoTab" ] = 841,
 }
+
+M.font_normal_bold = CreateFont( "CSLFGFontIntroButton" )
+M.font_normal_bold:SetFont( "Fonts\\FRIZQT__.TTF", 13, "" )
+M.font_normal_bold:SetTextColor( 1, 1, 0 )
+
+M.font_normal = CreateFont( "CSLFGFontNormal" )
+M.font_normal:SetFont( [[Interface\AddOns\CS_LFG\assets\fonts\PTSansNarrow.ttf]], 12, "" )
+M.font_normal:SetTextColor( NORMAL_FONT_COLOR.r, NORMAL_FONT_COLOR.g, NORMAL_FONT_COLOR.b )
+
+M.font_highlight = CreateFont( "CSLFGFontHighlight" )
+M.font_highlight:SetFont( [[Interface\AddOns\CS_LFG\assets\fonts\PTSansNarrow.ttf]], 12, "" )
+M.font_highlight:SetTextColor( HIGHLIGHT_FONT_COLOR.r, HIGHLIGHT_FONT_COLOR.g, HIGHLIGHT_FONT_COLOR.b )
+
+M.get_font = function()
+	return [[Interface\AddOns\CS_LFG\assets\fonts\PTSansNarrow.ttf]], 12, ""
+end
 
 ---@param type FrameType
 ---@param name string?
@@ -110,65 +125,224 @@ function M.create_scroll_bar( parent, name, width, height, on_change )
 		scroll_bar.mousewheel_step = value
 	end
 
+	frame.set_height = function( height )
+		frame:SetHeight( height )
+		scroll_bar:SetHeight( height - 32 )
+	end
+
 	frame.scroll_bar = scroll_bar
 	return frame
+end
+
+---@param parent Frame
+---@param max_letters integer?
+---@param on_text_changed function?
+---@return EditBoxFrame
+function M.create_multiline_editbox( parent, max_letters, on_text_changed )
+	---@class EditBoxFrame: Frame
+	local frame_editbox
+	if M.isModern then
+		frame_editbox = CreateFrame( "Frame", nil, parent, "TooltipBackdropTemplate" )
+	else
+		frame_editbox = CreateFrame( "Frame", nil, parent )
+		frame_editbox:SetBackdrop( {
+			bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+			edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+			tile = true,
+			tileSize = 16,
+			edgeSize = 16,
+			insets = {
+				left = 4,
+				right = 4,
+				top = 4,
+				bottom = 4,
+			},
+		} )
+		frame_editbox:SetBackdropColor( 0, 0, 0, 1 )
+		frame_editbox:SetBackdropBorderColor( 1, 1, 1, 1 )
+	end
+	local edit_box = CreateFrame( "EditBox", nil, frame_editbox )
+
+	edit_box:SetFontObject( "CSLFGFontHighlight" )
+	edit_box:SetPoint( "TOPLEFT", frame_editbox, "TOPLEFT", 5, -5 )
+	edit_box:SetPoint( "BOTTOMRIGHT", frame_editbox, "BOTTOMRIGHT", -5, 5 )
+	edit_box:SetMultiLine( true )
+	edit_box:SetMaxLetters( max_letters or 255 )
+	edit_box:SetAutoFocus( false )
+	edit_box:SetScript( "OnEscapePressed", function( self )
+		self:ClearFocus()
+	end )
+
+	local last_valid_text = ""
+
+	edit_box:SetScript( "OnTextChanged", function( self )
+		last_valid_text = self:GetText()
+		if on_text_changed then
+			on_text_changed( self )
+		end
+	end )
+
+	edit_box:SetScript( "OnChar", function( self, char )
+		if char == "\n" then
+			self:SetText( last_valid_text )
+		end
+	end )
+
+	---@return string
+	frame_editbox.get_text = function()
+		return edit_box:GetText()
+	end
+
+	frame_editbox.set_text = function( text )
+		edit_box:SetText( text )
+	end
+
+	frame_editbox.orig_msg = ""
+
+	return frame_editbox
+end
+
+---@param parent Frame
+---@param title string
+---@param bg_index integer
+---@param on_click function?
+---@return IntroButton
+function M.create_intro_button( parent, title, bg_index, on_click )
+	---@class IntroButton: Button
+	local button = CreateFrame( "Button", nil, parent )
+	button:SetWidth( 302 )
+	button:SetHeight( 48 )
+
+	local tex_bg = button:CreateTexture( nil, "BACKGROUND" )
+	tex_bg:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\ui-buttons]] )
+	if bg_index == 1 then
+		tex_bg:SetTexCoord( 0, 0.568359375, 0, 0.14453125 )
+	elseif bg_index == 2 then
+		tex_bg:SetTexCoord( 0, 0.568359375, 0.15234375, 0.296875 )
+	elseif bg_index == 3 then
+		tex_bg:SetTexCoord( 0, 0.568359375, 0.30078125, 0.4453125 )
+	end
+	tex_bg:SetWidth( 292 )
+	tex_bg:SetHeight( 38 )
+	tex_bg:SetPoint( "TOPLEFT", button, "TOPLEFT", 5, -5 )
+
+	local tex_down = button:CreateTexture( nil, "BACKGROUND" )
+	tex_down:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\ui-buttons]] )
+	tex_down:SetTexCoord( 0, 0.58984375, 0.6328125, 0.8203125 )
+	tex_down:SetBlendMode( "ADD" )
+	tex_down:SetAllPoints()
+	tex_down:Hide()
+
+	local tex_hover = button:CreateTexture( nil, "BACKGROUND" )
+	tex_hover:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\ui-buttons]] )
+	tex_hover:SetTexCoord( 0, 0.58984375, 0.44921875, 0.6328125 )
+	tex_hover:SetBlendMode( "ADD" )
+	tex_hover:SetAllPoints()
+	tex_hover:Hide()
+
+	local label_title = button:CreateFontString( nil, "ARTWORK", "CSLFGFontIntroButton" )
+	label_title:SetPoint( "LEFT", button, "LEFT", 15, 0 )
+	label_title:SetAlpha( 0.9 )
+	label_title:SetText( title )
+
+	button:SetScript( "OnEnter", function()
+		tex_hover:Show()
+		label_title:SetAlpha( 1 )
+	end )
+
+	button:SetScript( "OnLeave", function()
+		tex_hover:Hide()
+		label_title:SetAlpha( 0.9 )
+	end )
+
+	button:SetScript( "OnMouseDown", function()
+		tex_hover:Hide()
+		tex_down:Show()
+
+		label_title:SetPoint( "LEFT", button, "LEFT", 17, -2 )
+	end )
+	button:SetScript( "OnMouseUp", function()
+		tex_hover:Show()
+		tex_down:Hide()
+		label_title:SetPoint( "LEFT", button, "LEFT", 15, 0 )
+	end )
+
+	if on_click then
+		button:SetScript( "OnClick", on_click )
+	end
+
+	return button
 end
 
 ---@param parent Frame
 ---@param role Role
 ---@param options table
 ---@param on_click function?
----@return Button
-function M.create_role_button( parent, role, options, on_click )
-	---@class RoleButton: Button
-	local button = CreateFrame( "Button", nil, parent )
-	button:SetWidth( 54 )
-	button:SetHeight( 54 )
-	button:SetHighlightTexture( [[Interface\Buttons\IconBorder-GlowRing]], "ADD" )
-
-	local cb = CreateFrame( "CheckButton", nil, button, "UICheckButtonTemplate" )
-	cb:SetWidth( 24 )
-	cb:SetHeight( 24 )
-	cb:SetPoint( "BOTTOMLEFT", button, "BOTTOMLEFT", 0, -5 )
-	cb:EnableMouse( false )
-
-	local icon = button:CreateTexture( nil, "BORDER" )
-	icon:SetAllPoints( button )
-	if role == Roles.DPS then
-		icon:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\damage2]] )
-		button.tooltip = M.T[ "Indicates that you are willing to take on the role of dealing damage to enemies." ]
-	elseif role == Roles.Tank then
-		icon:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\tank2]] )
-		button.tooltip = M.T[ "Indicates that you are willing to protect allies from harm by ensuring that enemies are attacking you instead of them." ]
-	elseif role == Roles.Healer then
-		icon:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\healer2]] )
-		button.tooltip = M.T[ "Indicates that you are willing to heal your allies when they take damage." ]
-	end
+function M.create_player_role_button( parent, role, options, on_click )
+	local button = M.create_role_button( parent, role )
 
 	if M.find( role, M.classRoles[ M.player_class ] ) then
 		if options.dungeonRoles[ role ] then
-			cb:SetChecked( true )
+			button.cb:SetChecked( true )
 		end
 	else
 		button:Disable()
-		icon:SetDesaturated( true )
-		cb:Hide()
+		button.icon:SetDesaturated( true )
+		button.cb:Hide()
 	end
 
-	button:SetScript( "OnClick", function( self )
-		cb:SetChecked( not cb:GetChecked() )
-		if cb:GetChecked() then
+	button:SetScript( "OnClick", function()
+		button.cb:SetChecked( not button.cb:GetChecked() )
+		if button.cb:GetChecked() then
 			options.dungeonRoles[ role ] = true
 		else
 			options.dungeonRoles[ role ] = nil
 		end
 
 		if on_click then
-			on_click( self )
+			on_click()
 		end
 	end )
 
+	return button
+end
+
+---@param parent Frame
+---@param role Role
+---@return RoleButton
+function M.create_role_button( parent, role )
+	---@class RoleButton: Button
+	local button = CreateFrame( "Button", nil, parent )
+	button:SetWidth( 54 )
+	button:SetHeight( 54 )
+	button:SetHighlightTexture( [[Interface\Buttons\IconBorder-GlowRing]], "ADD" )
+	button.role = role
+
+	local cb = CreateFrame( "CheckButton", nil, button, "UICheckButtonTemplate" )
+	cb:SetWidth( 24 )
+	cb:SetHeight( 24 )
+	cb:SetPoint( "BOTTOMLEFT", button, "BOTTOMLEFT", 0, -5 )
+	cb:EnableMouse( false )
+	button.cb = cb
+
+	local icon = button:CreateTexture( nil, "BORDER" )
+	icon:SetAllPoints( button )
+	button.icon = icon
+
+	if role == "DPS" then
+		icon:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\damage2]] )
+		button.tooltip = M.T[ "Indicates that you are willing to take on the role of dealing damage to enemies." ]
+	elseif role == "Tank" then
+		icon:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\tank2]] )
+		button.tooltip = M.T[ "Indicates that you are willing to protect allies from harm by ensuring that enemies are attacking you instead of them." ]
+	elseif role == "Healer" then
+		icon:SetTexture( [[Interface\AddOns\CS_LFG\assets\images\healer2]] )
+		button.tooltip = M.T[ "Indicates that you are willing to heal your allies when they take damage." ]
+	end
+
 	button:SetScript( "OnEnter", function( self )
+		if not self:IsEnabled() then return end
+
 		self:LockHighlight()
 		GameTooltip:SetOwner( self, "ANCHOR_RIGHT" )
 		GameTooltip:SetText( self.tooltip, HIGHLIGHT_FONT_COLOR.r, HIGHLIGHT_FONT_COLOR.g, HIGHLIGHT_FONT_COLOR.b, nil, true )
@@ -180,18 +354,31 @@ function M.create_role_button( parent, role, options, on_click )
 		GameTooltip:Hide()
 	end )
 
+	button.disable = function()
+		button:Disable()
+		icon:SetDesaturated( true )
+		cb:Hide()
+	end
+
+	button.enable = function()
+		button:Enable()
+		icon:SetDesaturated( false )
+		cb:Show()
+	end
+
 	return button
 end
 
 ---@param parent Frame
+---@param max integer?
 ---@return StatusBar
-function M.create_timer_bar( parent )
+function M.create_timer_bar( parent, max )
 	local timer = CreateFrame( "StatusBar", nil, parent )
 	timer:SetWidth( 250 )
 	timer:SetHeight( 10 )
 	timer:SetStatusBarTexture( [[Interface\PaperDollInfoFrame\UI-Character-Skills-Bar]] )
 	timer:SetStatusBarColor( 1, 1, 0 )
-	timer:SetMinMaxValues( 0, 90 )
+	timer:SetMinMaxValues( 0, max and max or 90 )
 
 	local tex_timer = timer:CreateTexture( nil, "OVERLAY" )
 	tex_timer:SetTexture( [[Interface\PaperDollInfoFrame\UI-Character-Skills-BarBorder]] )
@@ -232,12 +419,75 @@ end
 
 ---@param player PlayerInfo
 function M.player_to_colorized_string( player )
-	local color = RAID_CLASS_COLORS[ M.Types.PlayerClass[ player[ 2 ] ] ]
+	return M.colorize_player_class( player[ 1 ], M.Types.PlayerClass[ player[ 2 ] ] )
+end
+
+---@param player string
+---@param class string
+---@return string
+function M.colorize_player_class( player, class )
+	local color = RAID_CLASS_COLORS[ class ]
 	if not color.colorStr then
 		color.colorStr = string.format( "ff%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255 )
 	end
 
-	return string.format( "|c%s%s|r", color.colorStr, player[ 1 ] )
+	return string.format( "|c%s%s|r", color.colorStr, player )
+end
+
+---@return integer
+function M.get_num_group_members()
+	if M.isModern then
+		return GetNumGroupMembers()
+	else
+		local num = GetNumPartyMembers()
+		return num > 0 and num + 1 or 0
+	end
+end
+
+---@return boolean
+function M.is_grouped()
+	return M.get_num_group_members() > 1 and true or false
+end
+
+---@param unit UnitToken?
+---@return boolean
+function M.is_group_leader( unit )
+	return UnitIsGroupLeader( unit or "player" ) and true or false
+end
+
+---@param dungeon_code string
+---@return string, boolean
+function M.dungeon_code_hc( dungeon_code )
+	local heroic = false
+
+	if strfind( dungeon_code, "hc$" ) then
+		dungeon_code = string.sub( dungeon_code, 1, -3 )
+		heroic = true
+	end
+
+	return dungeon_code, heroic
+end
+
+---@param roles Role[]
+---@return number
+function M.roles_to_bitmask( roles )
+	local mask = 0
+	if roles[ "DPS" ] then mask = bit.bor( mask, M.Types.Roles.DPS ) end
+	if roles[ "Tank" ] then mask = bit.bor( mask, M.Types.Roles.Tank ) end
+	if roles[ "Healer" ] then mask = bit.bor( mask, M.Types.Roles.Healer ) end
+
+	return mask
+end
+
+---@param mask number
+---@return Role[]
+function M.bitmask_to_roles( mask )
+	local roles = {}
+	if bit.band( mask, M.Types.Roles.DPS ) ~= 0 then roles[ #roles+1 ] = "DPS" end
+	if bit.band( mask, M.Types.Roles.Tank ) ~= 0 then roles[ #roles+1 ] = "Tank" end
+	if bit.band( mask, M.Types.Roles.Healer ) ~= 0 then roles[ #roles+1 ] = "Healer" end
+
+	return roles
 end
 
 ---@param str string
@@ -266,7 +516,7 @@ function M.find( value, t, extract_field )
 
 	for i, v in pairs( t ) do
 		local val = extract_field and v[ extract_field ] or v
-		if val == value then return v, i end
+		if val == value then return i, v end
 	end
 
 	return nil
@@ -295,36 +545,19 @@ function M.is_array( t )
 	return true
 end
 
----@param value any
----@return string
-function M.flatten( value )
-	local value_type = type( value )
+---@param inputstr string
+---@param sep string?
+---@return table
+function M.split( inputstr, sep )
+	local t = {}
 
-	if value_type == "table" then
-		if M.is_array( value ) then
-			-- JSON array
-			local items = {}
-			for i = 1, getn( value ) do
-				table.insert( items, M.flatten( value[ i ] ) )
-			end
-			return "{" .. table.concat( items, ",	" ) .. "}"
-		else
-			-- JSON object
-			local items = {}
-			for k, v in pairs( value ) do
-				table.insert( items, '["' .. tostring( k ) .. '"]=' .. M.flatten( v ) )
-			end
-			return "{" .. table.concat( items, "," ) .. "}"
-		end
-	elseif value_type == "string" then
-		return '"' .. string.gsub( value, '"', '\\"' ) .. '"'
-	elseif value_type == "number" or value_type == "boolean" then
-		return tostring( value )
-	elseif value_type == "nil" then
-		return "null"
+	if sep == nil then sep = "," end
+
+	for str in string.gmatch( inputstr, "([^" .. sep .. "]+)" ) do
+		table.insert( t, str )
 	end
 
-	error( "Unsupported type: " .. value_type )
+	return t
 end
 
 ---@param message string
