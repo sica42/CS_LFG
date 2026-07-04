@@ -82,11 +82,15 @@ function CSLFG:init()
 	ChatFrame_AddMessageEventFilter( "CHAT_MSG_SYSTEM", function( arg1, event, message )
 		if not m.isModern then message = arg1 end
 
-		if message and m.check_message( message ) then
+		if message and m.check_lfg_messages( message ) then
 			if m.hide_pending_lfg_response > 0 then
 				m.hide_pending_lfg_response = m.hide_pending_lfg_response - 1
 				return true
 			end
+		end
+
+		if m.db and m.db.options.hideBG and message and m.check_bg_messages( message ) then
+			return true
 		end
 
 		return false
@@ -95,14 +99,17 @@ function CSLFG:init()
 	SLASH_CSLFG1 = "/lfg"
 	SlashCmdList.CSLFG = function( args )
 		if not args or args == "" then
-			m.info( string.format( "(Version %s) Usage:", m.version), true )
+			m.info( string.format( "(Version %s) Usage:", m.version ), true )
 			--m.info ( "|cffaaaaaa/lfg icon_animate|r - Toggle minimap icon animation when Looking for Group.", true )
-			--m.info ( "", true)
+			m.info ( "|cffaaaaaa/lfg bg|r - Toggle BG announcements.", true )
+			m.info ( "|cffaaaaaa/lfg debug|r - Toggle debug messages.", true )
 		elseif args == "icon_animate" then
-
+		elseif args == "bg" then
+			m.db.options.hideBG = not m.db.options.hideBG
+			m.info( "BG Queue Announcements are now " .. (m.db.options.hideBG and "hidden." or "shown.") )
 		elseif args == "debug" then
 			m.debug_enabled = not m.debug_enabled
-			m.info( "Debug messages is " .. (m.debug_enabled and "enabled." or "disabled."), true)
+			m.info( "Debug messages is " .. (m.debug_enabled and "enabled." or "disabled."), true )
 		end
 	end
 end
@@ -114,7 +121,8 @@ function CSLFG.events.PLAYER_LOGIN()
 	m.db.options = m.db.options or {
 		dungeonType = 1,
 		lvlmin = 1,
-		lvlmax = 70
+		lvlmax = 70,
+		hideBG = false
 	}
 
 	m.player_name = UnitName( "player" )
@@ -294,7 +302,7 @@ end
 
 ---@param message string
 ---@return boolean
-function CSLFG.check_message( message )
+function CSLFG.check_lfg_messages( message )
 	if strfind( message, "Looking for Group", nil, true ) then
 		if strfind( message, "You are now listed as Looking for Group.", nil, true ) then
 			m.set_lfg( true )
@@ -375,6 +383,17 @@ function CSLFG.check_message( message )
 			m.lfg_popup.update()
 		end
 
+		return true
+	end
+
+	return false
+end
+
+function CSLFG.check_bg_messages( message )
+	if strfind( message, "BG Queue Announcer", nil, true ) then
+		return true
+	elseif strfind( message, "PvP is in progress.", nil, true ) then
+			-- (%w) PvP is in progress.
 		return true
 	end
 
