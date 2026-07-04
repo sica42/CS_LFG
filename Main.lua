@@ -417,7 +417,7 @@ function CSLFG.parse_dungeons( msg )
 			if match_hc then
 				dungeon = dungeon .. "hc"
 			else
-				if string.find( msg, "%W" .. dungeon .. "%W%shc?%W" ) then
+				if string.find( msg, "%W" .. dungeon .. "%shc?%s" ) then
 					dungeon = dungeon .. "hc"
 				end
 			end
