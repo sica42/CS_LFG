@@ -610,7 +610,7 @@ function M.new( options )
 				options.lvlmax = num
 			end
 			self:ClearFocus()
-			m.message_handler.lfg_list( options.lvlmin, options.lvlmax )
+			m.message_handler.lfg_list( options.lvlmin, options.lvlmax, true )
 		end
 	end
 
