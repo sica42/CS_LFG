@@ -392,6 +392,8 @@ end
 function CSLFG.check_bg_messages( message )
 	if strfind( message, "BG Queue Announcer", nil, true ) then
 		return true
+	elseif strfind( message, "Arena Queue Announcer", nil, true ) then
+		return true
 	elseif strfind( message, "PvP is in progress.", nil, true ) then
 			-- (%w) PvP is in progress.
 		return true
