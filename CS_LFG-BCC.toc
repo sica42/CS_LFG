@@ -2,7 +2,7 @@
 ## Title: CrusaderStormLFG|cFF00FF00 v0.3|r
 ## Author: Sica
 ## Notes: Crusader Storm LFG addon
-## Version: 0.3
+## Version: 0.4
 ## SavedVariablesPerCharacter: CS_LFGOptions
 
 libs\Libs.xml

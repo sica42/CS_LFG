@@ -186,7 +186,7 @@ function M.new()
 				m.db[ entry ] = time()
 
 				if tonumber( version ) > tonumber( m.version ) then
-					local url = "https://github.com/sica42/CS_LFG/releases/download/v" .. version .. "/CS_LFG.zip"
+					local url = "https://github.com/sica42/CS_LFG/releases/latest/download/CS_LFG.zip"
 					m.info( string.format( "New version (%s) is available!", version ), true )
 					m.info( string.format( "|Hurl:%s|h[%s]|h", url, url ), true )
 				end
