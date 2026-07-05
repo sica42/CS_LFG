@@ -452,7 +452,23 @@ end
 ---@param unit UnitToken?
 ---@return boolean
 function M.is_group_leader( unit )
-	return UnitIsGroupLeader( unit or "player" ) and true or false
+	unit = unit or "player"
+
+	if M.isModern  then
+		return UnitIsGroupLeader( unit ) == true
+	else
+		local index = GetPartyLeaderIndex()
+		if unit == "player" then
+			return index == 0
+		else
+			local _,_, pindex = string.find(unit, "party(%d+)")
+			if pindex then
+				return tonumber(pindex) == index
+			end
+		end
+
+		return false
+	end
 end
 
 ---@param dungeon_code string
